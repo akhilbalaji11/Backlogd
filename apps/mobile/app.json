@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "Backlogd",
+    "slug": "backlogd",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "backlogd",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D1117"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.backlogd.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Used to select and upload your profile avatar."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D1117"
+      },
+      "package": "com.backlogd.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Used to select and upload your profile avatar."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}
