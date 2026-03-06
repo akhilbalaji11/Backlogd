@@ -1,8 +1,0 @@
-{
-  "enabledMcpjsonServers": [
-    "shadcn-ui",
-    "@21st-dev/magic",
-    "playwright"
-  ],
-  "enableAllProjectMcpServers": true
-}
