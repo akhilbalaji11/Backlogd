@@ -4,10 +4,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
     Alert,
+    AppState,
     ScrollView,
     StyleSheet,
     Text,
@@ -22,6 +23,7 @@ import { ThemeBackdrop } from '../../src/components/ui/ThemeBackdrop';
 import { ThemeModeToggle } from '../../src/components/ui/ThemeModeToggle';
 import type { Platform } from '../../src/domain/types';
 import { profilesRepo } from '../../src/lib/profilesRepo';
+import { supabase } from '../../src/lib/supabase';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useAppTheme } from '../../src/theme/appTheme';
 
@@ -36,7 +38,7 @@ type FormData = z.infer<typeof schema>;
 
 export default function ProfileSetupScreen() {
     const router = useRouter();
-    const { user, setProfile } = useAuthStore();
+    const { pendingSignup, setPendingSignup, user, setProfile } = useAuthStore();
     const { theme } = useAppTheme();
     const styles = createStyles(theme);
     const [avatarUri, setAvatarUri] = useState<string | null>(null);
@@ -47,6 +49,47 @@ export default function ProfileSetupScreen() {
         resolver: zodResolver(schema),
         defaultValues: { displayName: '' },
     });
+
+    const signInPendingUser = async (showAlert: boolean) => {
+        if (!pendingSignup) {
+            if (showAlert) {
+                Alert.alert('Finish sign in', 'Create your account again or sign in from the home screen to continue.');
+            }
+            return null;
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: pendingSignup.email,
+            password: pendingSignup.password,
+        });
+
+        if (error) {
+            if (showAlert) {
+                const message = /confirm|verified|verification/i.test(error.message)
+                    ? `Confirm the verification email sent to ${pendingSignup.email}, then tap Launch Backlogd again.`
+                    : error.message;
+                Alert.alert('Finish sign in', message);
+            }
+            return null;
+        }
+
+        setPendingSignup(null);
+        return data.user;
+    };
+
+    useEffect(() => {
+        if (!pendingSignup || user) {
+            return;
+        }
+
+        const subscription = AppState.addEventListener('change', (state) => {
+            if (state === 'active') {
+                void signInPendingUser(false);
+            }
+        });
+
+        return () => subscription.remove();
+    }, [pendingSignup, user]);
 
     const pickAvatar = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -68,22 +111,23 @@ export default function ProfileSetupScreen() {
     };
 
     const onSubmit = async (data: FormData) => {
-        if (!user) return;
-
         setIsLoading(true);
         try {
+            const activeUser = user ?? await signInPendingUser(true);
+            if (!activeUser) return;
+
             let avatarUrl: string | undefined;
 
             if (avatarUri) {
                 try {
-                    avatarUrl = await profilesRepo.uploadAvatar(user.id, avatarUri);
+                    avatarUrl = await profilesRepo.uploadAvatar(activeUser.id, avatarUri);
                 } catch (uploadErr: any) {
                     console.warn('[Profile] Avatar upload failed, continuing without it:', uploadErr.message);
                 }
             }
 
             const profile = await profilesRepo.upsert({
-                id: user.id,
+                id: activeUser.id,
                 displayName: data.displayName,
                 bio: data.bio,
                 avatarUrl,
@@ -125,6 +169,15 @@ export default function ProfileSetupScreen() {
                             Add a name, a short vibe check, and your platforms so the app can feel like it belongs to you.
                         </Text>
                     </LinearGradient>
+
+                    {!user && pendingSignup ? (
+                        <View style={styles.noticeCard}>
+                            <Ionicons name="mail-open-outline" size={18} color={theme.colors.hero.secondary} />
+                            <Text style={styles.noticeText}>
+                                Confirm the verification email sent to {pendingSignup.email}, then come back here and tap Launch Backlogd.
+                            </Text>
+                        </View>
+                    ) : null}
 
                     <View style={styles.avatarSection}>
                         <TouchableOpacity style={styles.avatarShell} onPress={pickAvatar} activeOpacity={0.9}>
@@ -288,6 +341,24 @@ const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSh
         fontFamily: 'Inter_400Regular',
         color: 'rgba(255,255,255,0.84)',
         maxWidth: 320,
+    },
+    noticeCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: `${theme.colors.hero.secondary}2a`,
+        backgroundColor: theme.colors.surface.glassStrong,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+    },
+    noticeText: {
+        flex: 1,
+        fontSize: 13,
+        lineHeight: 20,
+        fontFamily: 'Inter_500Medium',
+        color: theme.colors.text.secondary,
     },
     avatarSection: {
         alignItems: 'center',

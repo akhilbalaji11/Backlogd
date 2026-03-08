@@ -8,11 +8,16 @@ interface AuthState {
     session: Session | null;
     user: User | null;
     profile: Profile | null;
+    pendingSignup: {
+        email: string;
+        password: string;
+    } | null;
     isLoading: boolean;
     isInitialized: boolean;
     // Actions
     setSession: (session: Session | null) => void;
     setProfile: (profile: Profile | null) => void;
+    setPendingSignup: (pendingSignup: { email: string; password: string } | null) => void;
     signOut: () => Promise<void>;
 }
 
@@ -20,15 +25,25 @@ export const useAuthStore = create<AuthState>((set) => ({
     session: null,
     user: null,
     profile: null,
+    pendingSignup: null,
     isLoading: false,
     isInitialized: false,
 
     setSession: (session) => {
-        set({ session, user: session?.user ?? null, isInitialized: true });
+        set((state) => ({
+            session,
+            user: session?.user ?? null,
+            pendingSignup: session?.user ? null : state.pendingSignup,
+            isInitialized: true,
+        }));
     },
 
     setProfile: (profile) => {
         set({ profile });
+    },
+
+    setPendingSignup: (pendingSignup) => {
+        set({ pendingSignup });
     },
 
     signOut: async () => {
@@ -39,7 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         } catch {
             await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
         } finally {
-            set({ session: null, user: null, profile: null, isLoading: false });
+            set({ session: null, user: null, profile: null, pendingSignup: null, isLoading: false });
         }
     },
 }));
