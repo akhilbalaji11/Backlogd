@@ -1,4 +1,4 @@
-// Domain types — pure TypeScript, no framework dependencies
+// Domain types - pure TypeScript, no framework dependencies
 
 export type GameStatus = 'played' | 'playing' | 'backlog' | 'wishlist';
 export type Platform = 'PS5' | 'Xbox' | 'Switch' | 'PC' | 'PS4' | 'iOS' | 'Android' | 'Other';
@@ -14,16 +14,23 @@ export interface GameSearchResult {
     releaseDate?: string;
     genres: string[];
     platforms: string[];
-    rating?: number;      // 0–100 scale from IGDB, normalized to 0–5 in UI
+    rating?: number;      // 0-100 scale from IGDB, normalized to 0-5 in UI
     matchType?: SearchMatchType;
+    matchLabel?: string;
 }
 
 // ---- Company Credits ----
 export interface InvolvedCompany {
-    company: { id: number; name: string };
+    company: { id?: number; name: string };
     developer: boolean;
     publisher: boolean;
     porting: boolean;
+}
+
+export interface CharacterCredit {
+    id: number;
+    name: string;
+    imageUrl?: string;
 }
 
 export interface GameDetail extends GameSearchResult {
@@ -32,6 +39,7 @@ export interface GameDetail extends GameSearchResult {
     similarGameIds?: string[];
     metacritic?: number;
     involvedCompanies?: InvolvedCompany[];
+    characterCredits?: CharacterCredit[];
 }
 
 // ---- User / Profile ----
@@ -58,7 +66,7 @@ export interface Review {
     id: string;
     userId: string;
     gameId: string;
-    rating: number; // 0.5–5.0
+    rating: number; // 0.5-5.0
     reviewText?: string;
     spoiler: boolean;
     createdAt: string;

@@ -7,13 +7,19 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface SearchHit {
+    name?: string | null;
+    character?: number | null;
+    game?: number | null;
+}
+
 interface SearchResult {
     game: any;
     matchType: 'title' | 'company' | 'character';
     relevanceScore: number;
+    matchLabel?: string;
 }
 
-// Map raw IGDB game data to our format
 function mapGame(g: any): any {
     return {
         providerId: String(g.id),
@@ -31,22 +37,100 @@ function mapGame(g: any): any {
     };
 }
 
-// Calculate relevance score for title matches
-function calculateTitleRelevance(game: any, query: string): number {
-    const title = game.name.toLowerCase();
-    const q = query.toLowerCase();
-
-    if (title === q) return 1.0;                    // Exact match
-    if (title.startsWith(q)) return 0.95;           // Starts with query
-    if (title.includes(q)) return 0.8;              // Contains query
-
-    // Fuzzy match bonus for partial word matches
-    const words = q.split(/\s+/);
-    const matchCount = words.filter(w => title.includes(w)).length;
-    return 0.5 + (matchCount / words.length) * 0.3;
+function escapeIgdbString(value: string): string {
+    return value
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
-// Search by game title
+function slugifyQuery(value: string): string {
+    return value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function normalizeMatchText(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function calculateEntityRelevance(candidate: string, query: string): number {
+    const rawCandidate = candidate.toLowerCase();
+    const rawQuery = query.toLowerCase();
+    const normalizedCandidate = normalizeMatchText(candidate);
+    const normalizedQuery = normalizeMatchText(query);
+
+    if (!normalizedQuery) return 0;
+    if (normalizedCandidate === normalizedQuery) return 1;
+    if (rawCandidate === rawQuery) return 0.98;
+    if (normalizedCandidate.startsWith(normalizedQuery)) return 0.95;
+    if (rawCandidate.startsWith(rawQuery)) return 0.92;
+    if (normalizedCandidate.includes(normalizedQuery)) return 0.88;
+    if (rawCandidate.includes(rawQuery)) return 0.84;
+
+    const queryTokens = rawQuery.split(/\s+/).filter(Boolean);
+    if (queryTokens.length === 0) return 0.5;
+
+    const tokenMatches = queryTokens.filter((token) => rawCandidate.includes(token)).length;
+    return 0.55 + (tokenMatches / queryTokens.length) * 0.2;
+}
+
+function calculateTitleRelevance(game: any, query: string): number {
+    return calculateEntityRelevance(game.name ?? '', query);
+}
+
+function mergeResults(allResults: SearchResult[]): SearchResult[] {
+    const gameMap = new Map<number, SearchResult>();
+
+    for (const result of allResults) {
+        const gameId = result.game.id;
+        const existing = gameMap.get(gameId);
+
+        if (!existing || result.relevanceScore > existing.relevanceScore) {
+            gameMap.set(gameId, result);
+        }
+    }
+
+    return Array.from(gameMap.values()).sort((a, b) => {
+        if (b.relevanceScore !== a.relevanceScore) {
+            return b.relevanceScore - a.relevanceScore;
+        }
+
+        const ratingA = a.game.rating ?? 0;
+        const ratingB = b.game.rating ?? 0;
+        return ratingB - ratingA;
+    });
+}
+
+function uniqueIds(ids: Array<number | null | undefined>): number[] {
+    return Array.from(
+        new Set(
+            ids.filter((value): value is number => typeof value === 'number' && value > 0)
+        )
+    );
+}
+
+async function fetchGamesByIds(gameIds: number[]): Promise<any[]> {
+    if (gameIds.length === 0) return [];
+
+    return igdbFetch('/games', `
+        fields id, name, cover.image_id, first_release_date, genres.name, platforms.name, rating;
+        where id = (${gameIds.join(',')});
+        sort rating desc;
+        limit ${Math.min(gameIds.length, 50)};
+    `);
+}
+
+async function loadSearchHits(query: string): Promise<SearchHit[]> {
+    return igdbFetch('/search', `
+        search "${query}";
+        fields name, company, character, game;
+        limit 20;
+    `);
+}
+
 async function searchByTitle(query: string, limit: number): Promise<SearchResult[]> {
     try {
         const results = await igdbFetch('/games', `
@@ -66,109 +150,105 @@ async function searchByTitle(query: string, limit: number): Promise<SearchResult
     }
 }
 
-// Search by company name (developer/publisher)
 async function searchByCompany(query: string): Promise<SearchResult[]> {
     try {
-        // First, find companies matching the query
+        const slugQuery = slugifyQuery(query);
+        const rawQuery = query.trim();
+        const companyFilterParts = [
+            slugQuery ? `slug = "${slugQuery}"` : '',
+            slugQuery ? `slug ~ *"${slugQuery}"*` : '',
+            rawQuery ? `name ~ *"${rawQuery}"*` : '',
+        ].filter(Boolean);
+
+        if (companyFilterParts.length === 0) return [];
+
         const companies = await igdbFetch('/companies', `
-            search "${query}";
-            fields id, name, developed, published;
-            limit 5;
+            fields id, name, slug, developed, published;
+            where ${companyFilterParts.join(' | ')};
+            limit 10;
         `);
 
         if (!companies || companies.length === 0) return [];
 
-        // Collect game IDs from developed/published arrays
-        const gameIds = new Set<number>();
-        companies.forEach((c: any) => {
-            (c.developed ?? []).forEach((id: number) => gameIds.add(id));
-            (c.published ?? []).forEach((id: number) => gameIds.add(id));
-        });
+        const scoreByGame = new Map<number, { score: number; label: string }>();
 
-        if (gameIds.size === 0) return [];
+        for (const company of companies) {
+            const relevance = calculateEntityRelevance(company.name ?? '', query);
+            const baseScore = 0.62 + relevance * 0.28;
 
-        // Fetch those games
-        const games = await igdbFetch('/games', `
-            fields id, name, cover.image_id, first_release_date, genres.name, platforms.name, rating;
-            where id = (${Array.from(gameIds).slice(0, 50).join(',')});
-            sort rating desc;
-            limit 20;
-        `);
+            for (const gameId of company.developed ?? []) {
+                const next = { score: baseScore, label: `Developer: ${company.name}` };
+                const current = scoreByGame.get(gameId);
+                if (!current || next.score > current.score) {
+                    scoreByGame.set(gameId, next);
+                }
+            }
 
-        // Score based on how well company name matches
-        return games.map((game: any) => ({
-            game,
-            matchType: 'company' as const,
-            relevanceScore: 0.7,  // Company matches get 0.7 base score
-        }));
+            for (const gameId of company.published ?? []) {
+                const next = { score: baseScore - 0.03, label: `Publisher: ${company.name}` };
+                const current = scoreByGame.get(gameId);
+                if (!current || next.score > current.score) {
+                    scoreByGame.set(gameId, next);
+                }
+            }
+        }
+
+        const games = await fetchGamesByIds(Array.from(scoreByGame.keys()).slice(0, 50));
+
+        return games
+            .filter((game: any) => scoreByGame.has(game.id))
+            .map((game: any) => ({
+                game,
+                matchType: 'company' as const,
+                relevanceScore: scoreByGame.get(game.id)!.score,
+                matchLabel: scoreByGame.get(game.id)!.label,
+            }));
     } catch (err) {
         console.error('[searchByCompany]', err);
         return [];
     }
 }
 
-// Search by character name
-async function searchByCharacter(query: string): Promise<SearchResult[]> {
+async function searchByCharacter(query: string, hits: SearchHit[]): Promise<SearchResult[]> {
     try {
-        // First, find characters matching the query
+        const characterIds = uniqueIds(hits.map((hit) => hit.character)).slice(0, 8);
+        if (characterIds.length === 0) return [];
+
         const characters = await igdbFetch('/characters', `
-            search "${query}";
             fields id, name, games;
-            limit 5;
+            where id = (${characterIds.join(',')});
+            limit ${characterIds.length};
         `);
 
-        if (!characters || characters.length === 0) return [];
+        const scoreByGame = new Map<number, { score: number; label: string }>();
 
-        // Collect game IDs from characters
-        const gameIds = new Set<number>();
-        characters.forEach((c: any) => {
-            (c.games ?? []).forEach((id: number) => gameIds.add(id));
-        });
+        for (const character of characters) {
+            const relevance = calculateEntityRelevance(character.name ?? '', query);
+            const baseScore = 0.6 + relevance * 0.32;
 
-        if (gameIds.size === 0) return [];
+            for (const gameId of character.games ?? []) {
+                const next = { score: baseScore, label: `Character: ${character.name}` };
+                const current = scoreByGame.get(gameId);
+                if (!current || next.score > current.score) {
+                    scoreByGame.set(gameId, next);
+                }
+            }
+        }
 
-        // Fetch those games
-        const games = await igdbFetch('/games', `
-            fields id, name, cover.image_id, first_release_date, genres.name, platforms.name, rating;
-            where id = (${Array.from(gameIds).slice(0, 50).join(',')});
-            sort rating desc;
-            limit 20;
-        `);
+        const games = await fetchGamesByIds(Array.from(scoreByGame.keys()).slice(0, 50));
 
-        return games.map((game: any) => ({
-            game,
-            matchType: 'character' as const,
-            relevanceScore: 0.5,  // Character matches get 0.5 base score
-        }));
+        return games
+            .filter((game: any) => scoreByGame.has(game.id))
+            .map((game: any) => ({
+                game,
+                matchType: 'character' as const,
+                relevanceScore: scoreByGame.get(game.id)!.score,
+                matchLabel: scoreByGame.get(game.id)!.label,
+            }));
     } catch (err) {
         console.error('[searchByCharacter]', err);
         return [];
     }
-}
-
-// Merge and deduplicate results, keeping highest score
-function mergeResults(allResults: SearchResult[]): SearchResult[] {
-    const gameMap = new Map<number, SearchResult>();
-
-    for (const result of allResults) {
-        const gameId = result.game.id;
-        const existing = gameMap.get(gameId);
-
-        if (!existing || result.relevanceScore > existing.relevanceScore) {
-            gameMap.set(gameId, result);
-        }
-    }
-
-    // Sort by relevance score, then by rating
-    return Array.from(gameMap.values())
-        .sort((a, b) => {
-            if (b.relevanceScore !== a.relevanceScore) {
-                return b.relevanceScore - a.relevanceScore;
-            }
-            const ratingA = a.game.rating ?? 0;
-            const ratingB = b.game.rating ?? 0;
-            return ratingB - ratingA;
-        });
 }
 
 serve(async (req) => {
@@ -190,17 +270,18 @@ serve(async (req) => {
             );
         }
 
-        // Escape special characters for IGDB query
-        const sanitizedQuery = query.replace(/"/g, '\\"');
+        const sanitizedQuery = escapeIgdbString(query);
+        const searchHits = await loadSearchHits(sanitizedQuery).catch((err) => {
+            console.error('[loadSearchHits]', err);
+            return [];
+        });
 
-        // Run parallel searches
         const [titleResults, companyResults, characterResults] = await Promise.allSettled([
             searchByTitle(sanitizedQuery, limit),
             searchByCompany(sanitizedQuery),
-            searchByCharacter(sanitizedQuery),
+            searchByCharacter(sanitizedQuery, searchHits),
         ]);
 
-        // Collect all successful results
         const allResults: SearchResult[] = [];
 
         if (titleResults.status === 'fulfilled') {
@@ -213,34 +294,29 @@ serve(async (req) => {
             allResults.push(...characterResults.value);
         }
 
-        // Merge, deduplicate, and sort
         const merged = mergeResults(allResults);
-
-        // Paginate
         const paginated = merged.slice(offset, offset + limit);
-
-        // Map to output format
-        const mapped = paginated.map(r => ({
-            ...mapGame(r.game),
-            matchType: r.matchType,
+        const mapped = paginated.map((result) => ({
+            ...mapGame(result.game),
+            matchType: result.matchType,
+            matchLabel: result.matchLabel,
         }));
 
-        // Cache results into Supabase games table
         const supabase = createClient(
             Deno.env.get('SUPABASE_URL')!,
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
         );
 
         if (mapped.length > 0) {
-            const upsertData = mapped.map((g: any) => ({
+            const upsertData = mapped.map((game: any) => ({
                 provider: 'igdb',
-                provider_game_id: g.providerId,
-                title: g.title,
-                cover_url: g.coverUrl ?? null,
-                release_date: g.releaseDate ?? null,
-                genres: g.genres,
-                platforms: g.platforms,
-                rating: g.rating ?? null,
+                provider_game_id: game.providerId,
+                title: game.title,
+                cover_url: game.coverUrl ?? null,
+                release_date: game.releaseDate ?? null,
+                genres: game.genres,
+                platforms: game.platforms,
+                rating: game.rating ?? null,
                 updated_at: new Date().toISOString(),
             }));
 

@@ -1,21 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
-import { useAuthStore } from '../../src/stores/authStore';
-import { colors } from '../../src/styles/tokens';
 
-// Custom tab bar icon with glow effect
-function TabIcon({ name, color, focused }: { name: string; color: string; focused: boolean }) {
+import { useAuthStore } from '../../src/stores/authStore';
+import { useAppTheme } from '../../src/theme/appTheme';
+
+function TabIcon({
+    name,
+    color,
+    focused,
+    accent,
+}: {
+    name: string;
+    color: string;
+    focused: boolean;
+    accent: string;
+}) {
     return (
-        <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+        <View style={[styles.iconContainer, focused && { backgroundColor: `${accent}18` }]}>
             <Ionicons name={name as any} size={22} color={color} />
-            {focused && <View style={styles.glowDot} />}
+            {focused && <View style={[styles.glowDot, { backgroundColor: accent }]} />}
         </View>
     );
 }
 
 export default function TabsLayout() {
     const { session, isInitialized } = useAuthStore();
+    const { theme } = useAppTheme();
 
     if (!isInitialized) return null;
 
@@ -27,21 +38,23 @@ export default function TabsLayout() {
         <Tabs
             screenOptions={{
                 headerShown: false,
+                sceneStyle: { backgroundColor: theme.colors.bg.primary },
                 tabBarStyle: {
-                    backgroundColor: colors.bg.primary,
-                    borderTopColor: colors.border,
+                    backgroundColor: theme.colors.surface.glassStrong,
+                    borderTopColor: theme.colors.border,
                     borderTopWidth: 1,
-                    height: Platform.OS === 'ios' ? 88 : 64,
-                    paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+                    height: Platform.OS === 'ios' ? 92 : 70,
+                    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
                     paddingTop: 10,
                     elevation: 0,
-                    shadowColor: colors.neon.cyan,
-                    shadowOffset: { width: 0, height: -2 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 8,
+                    position: 'absolute',
+                    shadowColor: theme.colors.surface.cardShadow,
+                    shadowOffset: { width: 0, height: -6 },
+                    shadowOpacity: theme.isDark ? 0.28 : 0.08,
+                    shadowRadius: 16,
                 },
-                tabBarActiveTintColor: colors.neon.cyan,
-                tabBarInactiveTintColor: colors.text.muted,
+                tabBarActiveTintColor: theme.colors.hero.primary,
+                tabBarInactiveTintColor: theme.colors.text.muted,
                 tabBarLabelStyle: {
                     fontFamily: 'Inter_600SemiBold',
                     fontSize: 10,
@@ -55,7 +68,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Discover',
                     tabBarIcon: ({ color, focused }) => (
-                        <TabIcon name="compass" color={color} focused={focused} />
+                        <TabIcon name="compass" color={color} focused={focused} accent={theme.colors.hero.primary} />
                     ),
                 }}
             />
@@ -64,7 +77,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Search',
                     tabBarIcon: ({ color, focused }) => (
-                        <TabIcon name="search" color={color} focused={focused} />
+                        <TabIcon name="search" color={color} focused={focused} accent={theme.colors.hero.secondary} />
                     ),
                 }}
             />
@@ -73,7 +86,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Diary',
                     tabBarIcon: ({ color, focused }) => (
-                        <TabIcon name="calendar" color={color} focused={focused} />
+                        <TabIcon name="calendar" color={color} focused={focused} accent={theme.colors.hero.tertiary} />
                     ),
                 }}
             />
@@ -82,7 +95,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Lists',
                     tabBarIcon: ({ color, focused }) => (
-                        <TabIcon name="list" color={color} focused={focused} />
+                        <TabIcon name="list" color={color} focused={focused} accent={theme.colors.hero.quaternary} />
                     ),
                 }}
             />
@@ -91,7 +104,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Profile',
                     tabBarIcon: ({ color, focused }) => (
-                        <TabIcon name="person" color={color} focused={focused} />
+                        <TabIcon name="person" color={color} focused={focused} accent={theme.colors.neon.orange} />
                     ),
                 }}
             />
@@ -104,26 +117,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         width: 44,
-        height: 28,
-        borderRadius: 14,
-    },
-    iconContainerActive: {
-        backgroundColor: colors.neon.cyan + '10',
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
+        height: 30,
+        borderRadius: 15,
     },
     glowDot: {
         position: 'absolute',
-        bottom: -4,
-        width: 4,
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: colors.neon.cyan,
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 4,
+        bottom: -5,
+        width: 6,
+        height: 6,
+        borderRadius: 3,
     },
 });

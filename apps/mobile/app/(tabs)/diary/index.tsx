@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
     ActivityIndicator,
     Alert,
@@ -20,11 +21,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
 import { StarRating } from '../../../src/components/ui/StarRating';
+import { ThemeBackdrop } from '../../../src/components/ui/ThemeBackdrop';
+import { ThemeModeToggle } from '../../../src/components/ui/ThemeModeToggle';
 import type { PlaySession } from '../../../src/domain/types';
 import { supabase } from '../../../src/lib/supabase';
 import { withTimeout } from '../../../src/lib/withTimeout';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { colors, radius, spacing, typography, PLATFORM_COLORS } from '../../../src/styles/tokens';
+import { useAppTheme } from '../../../src/theme/appTheme';
 
 interface DiaryGameOption {
     id: string;
@@ -70,6 +74,7 @@ function groupByMonth(sessions: PlaySession[]) {
 
 // Session card with glow effect
 function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () => void }) {
+    const { theme } = useAppTheme();
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const handlePressIn = () => {
@@ -95,22 +100,38 @@ function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () 
             onPressOut={handlePressOut}
             activeOpacity={0.9}
         >
-            <Animated.View style={[styles.sessionCard, { transform: [{ scale: scaleAnim }] }]}>
+            <Animated.View
+                style={[
+                    styles.sessionCard,
+                    {
+                        transform: [{ scale: scaleAnim }],
+                        backgroundColor: theme.colors.surface.glassStrong,
+                        borderColor: theme.colors.border,
+                        shadowColor: theme.colors.surface.cardShadow,
+                    },
+                ]}
+            >
+                <LinearGradient
+                    colors={[`${theme.colors.hero.primary}14`, `${theme.colors.hero.secondary}08`, 'transparent']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFillObject}
+                />
                 <View style={styles.sessionRow}>
                     {/* Date column */}
                     <View style={styles.dateColumn}>
-                        <Text style={styles.sessionDay}>
+                        <Text style={[styles.sessionDay, { color: theme.colors.text.primary }]}>
                             {new Date(session.playedOn).getDate()}
                         </Text>
-                        <Text style={styles.sessionMonth}>
+                        <Text style={[styles.sessionMonth, { color: theme.colors.text.secondary }]}>
                             {new Date(session.playedOn).toLocaleDateString('en-US', { month: 'short' })}
                         </Text>
                     </View>
 
                     {/* Timeline connector */}
                     <View style={styles.timelineContainer}>
-                        <View style={styles.timelineDot} />
-                        <View style={styles.timelineLine} />
+                        <View style={[styles.timelineDot, { backgroundColor: theme.colors.hero.primary }]} />
+                        <View style={[styles.timelineLine, { backgroundColor: theme.colors.border }]} />
                     </View>
 
                     {/* Content */}
@@ -126,17 +147,17 @@ function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () 
                                 />
                             ) : (
                                 <View style={styles.sessionCoverPlaceholder}>
-                                    <Ionicons name="game-controller" size={16} color={colors.text.muted} />
+                                    <Ionicons name="game-controller" size={16} color={theme.colors.text.muted} />
                                 </View>
                             )}
                             <View style={styles.sessionInfo}>
-                                <Text style={styles.sessionGame} numberOfLines={2}>
+                                <Text style={[styles.sessionGame, { color: theme.colors.text.primary }]} numberOfLines={2}>
                                     {session.game?.title ?? 'Unknown Game'}
                                 </Text>
                                 {session.firstTimePlay && (
-                                    <View style={styles.firstPlayBadge}>
-                                        <Ionicons name="ribbon" size={10} color={colors.neon.lime} />
-                                        <Text style={styles.firstPlayText}>First playthrough</Text>
+                                    <View style={[styles.firstPlayBadge, { backgroundColor: `${theme.colors.hero.quaternary}16` }]}>
+                                        <Ionicons name="ribbon" size={10} color={theme.colors.hero.quaternary} />
+                                        <Text style={[styles.firstPlayText, { color: theme.colors.hero.quaternary }]}>First playthrough</Text>
                                     </View>
                                 )}
                             </View>
@@ -144,14 +165,14 @@ function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () 
 
                         {/* Notes */}
                         {session.notes && (
-                            <Text style={styles.sessionNotes} numberOfLines={2}>{session.notes}</Text>
+                            <Text style={[styles.sessionNotes, { color: theme.colors.text.secondary }]} numberOfLines={2}>{session.notes}</Text>
                         )}
 
                         {/* Platform */}
                         {session.platform && (
                             <View style={styles.sessionPlatform}>
-                                <View style={[styles.platformDot, { backgroundColor: PLATFORM_COLORS[session.platform] || colors.text.muted }]} />
-                                <Text style={styles.platformText}>{session.platform}</Text>
+                                <View style={[styles.platformDot, { backgroundColor: PLATFORM_COLORS[session.platform] || theme.colors.text.muted }]} />
+                                <Text style={[styles.platformText, { color: theme.colors.text.secondary }]}>{session.platform}</Text>
                             </View>
                         )}
                     </View>
@@ -163,6 +184,7 @@ function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () 
 
 // Month header component
 function MonthHeader({ month, count }: { month: string; count: number }) {
+    const { theme } = useAppTheme();
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -174,10 +196,10 @@ function MonthHeader({ month, count }: { month: string; count: number }) {
     }, []);
 
     return (
-        <Animated.View style={[styles.monthHeader, { opacity: fadeAnim }]}>
-            <Text style={styles.monthLabel}>{month}</Text>
-            <View style={styles.monthCount}>
-                <Text style={styles.monthCountText}>{count} sessions</Text>
+        <Animated.View style={[styles.monthHeader, { opacity: fadeAnim, borderBottomColor: theme.colors.border }]}>
+            <Text style={[styles.monthLabel, { color: theme.colors.text.primary }]}>{month}</Text>
+            <View style={[styles.monthCount, { backgroundColor: theme.colors.surface.glassStrong }]}>
+                <Text style={[styles.monthCountText, { color: theme.colors.text.secondary }]}>{count} sessions</Text>
             </View>
         </Animated.View>
     );
@@ -186,6 +208,7 @@ function MonthHeader({ month, count }: { month: string; count: number }) {
 export default function DiaryScreen() {
     const { user } = useAuthStore();
     const qc = useQueryClient();
+    const { theme } = useAppTheme();
     const [showAdd, setShowAdd] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedGame, setSelectedGame] = useState<DiaryGameOption | null>(null);
@@ -328,32 +351,53 @@ export default function DiaryScreen() {
     const grouped = groupByMonth(sessions);
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+            <ThemeBackdrop />
+            <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.title}>Diary</Text>
-                    <Text style={styles.subtitle}>Your gaming journey</Text>
+                    <Text style={[styles.title, { color: theme.colors.text.primary }]}>Diary</Text>
+                    <Text style={[styles.subtitle, { color: theme.colors.hero.primary }]}>Your gaming journey</Text>
                 </View>
-                <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-                    <Ionicons name="add" size={24} color={colors.bg.primary} />
-                </TouchableOpacity>
+                <View style={styles.headerControls}>
+                    <ThemeModeToggle compact />
+                    <TouchableOpacity style={[styles.addBtn, { backgroundColor: theme.colors.hero.primary, shadowColor: theme.colors.hero.primary }]} onPress={() => setShowAdd(true)}>
+                        <Ionicons name="add" size={24} color={theme.colors.bg.primary} />
+                    </TouchableOpacity>
+                </View>
             </View>
+
+            <LinearGradient
+                colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.tertiary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroCard}
+            >
+                <View>
+                    <Text style={styles.heroLabel}>Timeline</Text>
+                    <Text style={styles.heroValue}>{sessions.length}</Text>
+                    <Text style={styles.heroCopy}>logged sessions in your backlog</Text>
+                </View>
+                <TouchableOpacity style={styles.heroAction} onPress={() => setShowAdd(true)}>
+                    <Text style={styles.heroActionText}>Add Entry</Text>
+                </TouchableOpacity>
+            </LinearGradient>
 
             {/* Content */}
             {isLoading ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.neon.cyan} />
+                    <ActivityIndicator size="large" color={theme.colors.hero.primary} />
                 </View>
             ) : sessions.length === 0 ? (
                 <View style={styles.emptyContainer}>
-                    <View style={styles.emptyIcon}>
-                        <Ionicons name="calendar-outline" size={48} color={colors.text.muted} />
+                    <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surface.glassStrong }]}>
+                        <Ionicons name="calendar-outline" size={48} color={theme.colors.text.muted} />
                     </View>
-                    <Text style={styles.emptyTitle}>No entries yet</Text>
-                    <Text style={styles.emptySubtitle}>Log your first gaming session to start your diary</Text>
-                    <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAdd(true)}>
-                        <Ionicons name="add" size={18} color={colors.bg.primary} />
+                    <Text style={[styles.emptyTitle, { color: theme.colors.text.primary }]}>No entries yet</Text>
+                    <Text style={[styles.emptySubtitle, { color: theme.colors.text.secondary }]}>Log your first gaming session to start your diary</Text>
+                    <TouchableOpacity style={[styles.emptyButton, { backgroundColor: theme.colors.hero.primary }]} onPress={() => setShowAdd(true)}>
+                        <Ionicons name="add" size={18} color={theme.colors.bg.primary} />
                         <Text style={styles.emptyButtonText}>Add Entry</Text>
                     </TouchableOpacity>
                 </View>
@@ -381,75 +425,76 @@ export default function DiaryScreen() {
 
             {/* Add Modal */}
             <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
-                <SafeAreaView style={styles.modal}>
-                    <View style={styles.modalHeader}>
+                <SafeAreaView style={[styles.modal, { backgroundColor: theme.colors.bg.primary }]}>
+                    <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
                         <TouchableOpacity onPress={closeModal}>
-                            <Text style={styles.cancelBtn}>Cancel</Text>
+                            <Text style={[styles.cancelBtn, { color: theme.colors.text.secondary }]}>Cancel</Text>
                         </TouchableOpacity>
-                        <Text style={styles.modalTitle}>New Entry</Text>
+                        <Text style={[styles.modalTitle, { color: theme.colors.text.primary }]}>New Entry</Text>
                         <TouchableOpacity
                             onPress={() => addMutation.mutate()}
                             disabled={addMutation.isPending || !selectedGame || rating <= 0 || !reviewText.trim()}
                         >
                             <Text style={[
                                 styles.saveBtn,
+                                { color: theme.colors.hero.primary },
                                 (addMutation.isPending || !selectedGame || rating <= 0 || !reviewText.trim()) && { opacity: 0.4 },
                             ]}>
-                                {addMutation.isPending ? 'Saving…' : 'Save'}
+                                {addMutation.isPending ? 'Saving...' : 'Save'}
                             </Text>
                         </TouchableOpacity>
                     </View>
 
                     <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
                         {/* Game selection */}
-                        <Text style={styles.fieldLabel}>Game *</Text>
+                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Game *</Text>
                         {selectedGame ? (
-                            <View style={styles.selectedGameCard}>
+                            <View style={[styles.selectedGameCard, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
                                 {selectedGame.coverUrl && (
                                     <Image source={{ uri: selectedGame.coverUrl }} style={styles.selectedGameCover} />
                                 )}
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.selectedGameTitle}>{selectedGame.title}</Text>
+                                    <Text style={[styles.selectedGameTitle, { color: theme.colors.text.primary }]}>{selectedGame.title}</Text>
                                     {selectedGame.releaseDate && (
-                                        <Text style={styles.selectedGameYear}>
+                                        <Text style={[styles.selectedGameYear, { color: theme.colors.text.secondary }]}>
                                             {new Date(selectedGame.releaseDate).getFullYear()}
                                         </Text>
                                     )}
                                 </View>
                                 <TouchableOpacity onPress={() => setSelectedGame(null)}>
-                                    <Text style={styles.changeBtn}>Change</Text>
+                                    <Text style={[styles.changeBtn, { color: theme.colors.hero.primary }]}>Change</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : (
                             <>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border, color: theme.colors.text.primary }]}
                                     placeholder="Search games..."
-                                    placeholderTextColor={colors.text.muted}
+                                    placeholderTextColor={theme.colors.text.muted}
                                     value={searchQuery}
                                     onChangeText={setSearchQuery}
-                                    selectionColor={colors.neon.cyan}
+                                    selectionColor={theme.colors.hero.primary}
                                     autoFocus
                                 />
                                 {normalizedSearch.length >= 2 && (
-                                    <View style={styles.searchResults}>
+                                    <View style={[styles.searchResults, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
                                         {isSearchingGames ? (
-                                            <ActivityIndicator color={colors.neon.cyan} style={{ paddingVertical: spacing.lg }} />
+                                            <ActivityIndicator color={theme.colors.hero.primary} style={{ paddingVertical: spacing.lg }} />
                                         ) : gameOptions.length === 0 ? (
-                                            <Text style={styles.noResultsText}>No matching games found</Text>
+                                            <Text style={[styles.noResultsText, { color: theme.colors.text.secondary }]}>No matching games found</Text>
                                         ) : (
                                             gameOptions.map((game) => (
                                                 <TouchableOpacity
                                                     key={game.id}
-                                                    style={styles.searchResultRow}
+                                                    style={[styles.searchResultRow, { borderBottomColor: theme.colors.border }]}
                                                     onPress={() => {
                                                         setSelectedGame(game);
                                                         setSearchQuery('');
                                                     }}
                                                 >
-                                                    <Text style={styles.searchResultTitle}>{game.title}</Text>
+                                                    <Text style={[styles.searchResultTitle, { color: theme.colors.text.primary }]}>{game.title}</Text>
                                                     {game.releaseDate && (
-                                                        <Text style={styles.searchResultYear}>
+                                                        <Text style={[styles.searchResultYear, { color: theme.colors.text.secondary }]}>
                                                             {new Date(game.releaseDate).getFullYear()}
                                                         </Text>
                                                     )}
@@ -462,75 +507,80 @@ export default function DiaryScreen() {
                         )}
 
                         {/* Date picker */}
-                        <Text style={styles.fieldLabel}>Played On *</Text>
-                        <View style={styles.dateRow}>
+                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Played On *</Text>
+                        <View style={[styles.dateRow, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
                             <TouchableOpacity
-                                style={styles.dateAdjustBtn}
+                                style={[styles.dateAdjustBtn, { backgroundColor: theme.colors.bg.secondary }]}
                                 onPress={() => setPlayedOn((d) => shiftDays(d, -1))}
                             >
-                                <Ionicons name="chevron-back" size={18} color={colors.text.secondary} />
+                                <Ionicons name="chevron-back" size={18} color={theme.colors.text.secondary} />
                             </TouchableOpacity>
-                            <Text style={styles.dateValue}>{formatDiaryDate(playedOn)}</Text>
+                            <Text style={[styles.dateValue, { color: theme.colors.text.primary }]}>{formatDiaryDate(playedOn)}</Text>
                             <TouchableOpacity
-                                style={styles.dateAdjustBtn}
+                                style={[styles.dateAdjustBtn, { backgroundColor: theme.colors.bg.secondary }]}
                                 onPress={() => setPlayedOn((d) => shiftDays(d, 1))}
                             >
-                                <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
+                                <Ionicons name="chevron-forward" size={18} color={theme.colors.text.secondary} />
                             </TouchableOpacity>
                         </View>
                         <TouchableOpacity onPress={() => setPlayedOn(new Date())}>
-                            <Text style={styles.todayBtn}>Use Today</Text>
+                            <Text style={[styles.todayBtn, { color: theme.colors.hero.primary }]}>Use Today</Text>
                         </TouchableOpacity>
 
                         {/* Rating */}
-                        <Text style={styles.fieldLabel}>Rating *</Text>
-                        <View style={styles.ratingBlock}>
+                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Rating *</Text>
+                        <View style={[styles.ratingBlock, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
                             <StarRating value={rating} onChange={setRating} size={36} />
                         </View>
 
                         {/* Review */}
-                        <Text style={styles.fieldLabel}>Review *</Text>
+                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Review *</Text>
                         <TextInput
-                            style={[styles.input, styles.textArea]}
+                            style={[
+                                styles.input,
+                                styles.textArea,
+                                { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border, color: theme.colors.text.primary },
+                            ]}
                             placeholder="Write your thoughts..."
-                            placeholderTextColor={colors.text.muted}
+                            placeholderTextColor={theme.colors.text.muted}
                             value={reviewText}
                             onChangeText={setReviewText}
                             multiline
                             textAlignVertical="top"
-                            selectionColor={colors.neon.cyan}
+                            selectionColor={theme.colors.hero.primary}
                         />
 
                         {/* Toggles */}
-                        <View style={styles.toggleRow}>
+                        <View style={[styles.toggleRow, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.toggleLabel}>First time playing</Text>
-                                <Text style={styles.toggleDescription}>Mark as first playthrough</Text>
+                                <Text style={[styles.toggleLabel, { color: theme.colors.text.primary }]}>First time playing</Text>
+                                <Text style={[styles.toggleDescription, { color: theme.colors.text.secondary }]}>Mark as first playthrough</Text>
                             </View>
                             <Switch
                                 value={firstTimePlay}
                                 onValueChange={setFirstTimePlay}
-                                trackColor={{ false: colors.border, true: colors.neon.lime }}
-                                thumbColor={colors.white}
+                                trackColor={{ false: theme.colors.border, true: theme.colors.hero.quaternary }}
+                                thumbColor={theme.colors.white}
                             />
                         </View>
 
-                        <View style={styles.toggleRow}>
+                        <View style={[styles.toggleRow, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.toggleLabel}>No spoilers</Text>
-                                <Text style={styles.toggleDescription}>Hide from activity feed</Text>
+                                <Text style={[styles.toggleLabel, { color: theme.colors.text.primary }]}>No spoilers</Text>
+                                <Text style={[styles.toggleDescription, { color: theme.colors.text.secondary }]}>Hide from activity feed</Text>
                             </View>
                             <Switch
                                 value={noSpoilers}
                                 onValueChange={setNoSpoilers}
-                                trackColor={{ false: colors.border, true: colors.neon.cyan }}
-                                thumbColor={colors.white}
+                                trackColor={{ false: theme.colors.border, true: theme.colors.hero.primary }}
+                                thumbColor={theme.colors.white}
                             />
                         </View>
                     </ScrollView>
                 </SafeAreaView>
             </Modal>
-        </SafeAreaView>
+            </SafeAreaView>
+        </View>
     );
 }
 
@@ -546,6 +596,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         paddingTop: spacing.lg,
         paddingBottom: spacing.md,
+    },
+    headerControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
     },
     title: {
         fontSize: typography.size['2xl'],
@@ -571,6 +626,46 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 8,
         elevation: 8,
+    },
+    heroCard: {
+        marginHorizontal: spacing.lg,
+        marginBottom: spacing.md,
+        borderRadius: radius.xl,
+        padding: spacing.lg,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        gap: spacing.base,
+    },
+    heroLabel: {
+        color: colors.white,
+        fontSize: typography.size.xs,
+        fontFamily: 'Inter_700Bold',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+    },
+    heroValue: {
+        marginTop: spacing.xs,
+        color: colors.white,
+        fontSize: typography.size['3xl'],
+        fontFamily: 'Inter_700Bold',
+    },
+    heroCopy: {
+        color: colors.white,
+        opacity: 0.82,
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_500Medium',
+    },
+    heroAction: {
+        backgroundColor: 'rgba(255,255,255,0.82)',
+        borderRadius: radius.full,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    heroActionText: {
+        color: colors.black,
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_700Bold',
     },
 
     // Loading

@@ -26,6 +26,7 @@ What is implemented in this repo today:
 - Auth flow with Supabase (`sign up`, `sign in`, `sign out`)
 - Profile setup with avatar upload + favorite platforms
 - Game search from IGDB via `games-search` edge function
+- Filtered game browse via `games-browse` edge function
 - Game detail screen via `games-detail` edge function with DB caching
 - Status updates + review/rating posting
 - Activity feed (reviews, ratings, status changes)
@@ -121,6 +122,7 @@ In Supabase Dashboard -> Edge Functions -> Manage Secrets:
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase functions deploy games-search
+supabase functions deploy games-browse
 supabase functions deploy games-detail
 supabase functions deploy ai-tag-review
 ```

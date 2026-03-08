@@ -1,53 +1,77 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, TouchableOpacity, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../../styles/tokens';
+
+import { useAppTheme } from '../../theme/appTheme';
 
 interface FormFieldProps extends TextInputProps {
     label: string;
     error?: string;
 }
 
-export function FormField({ label, error, secureTextEntry, ...props }: FormFieldProps) {
+export function FormField({ label, error, secureTextEntry, onFocus, onBlur, value, ...props }: FormFieldProps) {
     const [showPassword, setShowPassword] = useState(false);
     const [isFocused, setIsFocused] = useState(false);
+    const { theme } = useAppTheme();
+    const normalizedValue =
+        typeof value === 'string'
+            ? value
+            : value == null
+                ? ''
+                : String(value);
 
     return (
         <View style={styles.container}>
-            <Text style={styles.label}>{label}</Text>
+            <Text style={[styles.label, { color: theme.colors.text.secondary }]}>{label}</Text>
             <View
                 style={[
                     styles.inputWrapper,
-                    error ? styles.inputError : isFocused && styles.inputFocused,
+                    {
+                        backgroundColor: theme.colors.surface.glassStrong,
+                        borderColor: theme.colors.border,
+                        shadowColor: theme.colors.surface.cardShadow,
+                    },
+                    error
+                        ? { borderColor: theme.colors.neon.pink, shadowColor: theme.colors.neon.pink, shadowOpacity: 0.16, shadowRadius: 10 }
+                        : isFocused
+                            ? { borderColor: theme.colors.hero.primary, shadowColor: theme.colors.hero.primary, shadowOpacity: 0.16, shadowRadius: 12 }
+                            : null,
                 ]}
             >
                 <TextInput
-                    style={styles.input}
-                    placeholderTextColor={colors.text.muted}
-                    selectionColor={colors.neon.cyan}
-                    secureTextEntry={secureTextEntry && !showPassword}
-                    onFocus={() => setIsFocused(true)}
-                    onBlur={() => setIsFocused(false)}
                     {...props}
+                    style={[styles.input, { color: theme.colors.text.primary }]}
+                    value={normalizedValue}
+                    placeholderTextColor={theme.colors.text.muted}
+                    selectionColor={theme.colors.hero.primary}
+                    secureTextEntry={secureTextEntry && !showPassword}
+                    onFocus={(event) => {
+                        setIsFocused(true);
+                        onFocus?.(event);
+                    }}
+                    onBlur={(event) => {
+                        setIsFocused(false);
+                        onBlur?.(event);
+                    }}
                 />
                 {secureTextEntry && (
                     <TouchableOpacity
-                        onPress={() => setShowPassword((v) => !v)}
+                        onPress={() => setShowPassword((value) => !value)}
                         style={styles.eyeBtn}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <Ionicons
                             name={showPassword ? 'eye-off' : 'eye'}
                             size={18}
-                            color={isFocused ? colors.neon.cyan : colors.text.muted}
+                            color={isFocused ? theme.colors.hero.primary : theme.colors.text.muted}
                         />
                     </TouchableOpacity>
                 )}
             </View>
             {error ? (
                 <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle" size={12} color={colors.neon.pink} />
-                    <Text style={styles.errorText}>{error}</Text>
+                    <Ionicons name="alert-circle" size={12} color={theme.colors.neon.pink} />
+                    <Text style={[styles.errorText, { color: theme.colors.neon.pink }]}>{error}</Text>
                 </View>
             ) : null}
         </View>
@@ -56,58 +80,39 @@ export function FormField({ label, error, secureTextEntry, ...props }: FormField
 
 const styles = StyleSheet.create({
     container: {
-        gap: spacing.xs,
+        gap: 6,
     },
     label: {
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_500Medium',
-        color: colors.text.secondary,
+        fontSize: 12,
+        fontFamily: 'Inter_600SemiBold',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.8,
     },
     inputWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.md,
+        borderRadius: 18,
         borderWidth: 1.5,
-        borderColor: colors.border,
-        paddingHorizontal: spacing.base,
-    },
-    inputFocused: {
-        borderColor: colors.neon.cyan,
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-    },
-    inputError: {
-        borderColor: colors.neon.pink,
-        shadowColor: colors.neon.pink,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
+        paddingHorizontal: 18,
     },
     input: {
         flex: 1,
-        fontSize: typography.size.base,
+        fontSize: 15,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.primary,
-        paddingVertical: spacing.md,
-        minHeight: 52,
+        paddingVertical: 15,
+        minHeight: 56,
     },
     eyeBtn: {
-        padding: spacing.xs,
+        padding: 4,
     },
     errorContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.xs,
+        gap: 6,
         marginTop: 2,
     },
     errorText: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.neon.pink,
+        fontSize: 11,
+        fontFamily: 'Inter_500Medium',
     },
 });

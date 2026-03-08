@@ -1,27 +1,31 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useEffect, useRef } from 'react';
 import { Animated, PanResponder, StyleSheet, View } from 'react-native';
-import { colors } from '../../styles/tokens';
+
+import { useAppTheme } from '../../theme/appTheme';
 
 interface StarRatingProps {
-    value: number;   // 0 to 5, increments of 0.5
+    value: number;
     onChange?: (rating: number) => void;
     onCommit?: (rating: number) => void;
     size?: number;
     readonly?: boolean;
 }
 
-// Individual star with glow effect
 function GlowStar({
     filled,
     halfFilled,
     size,
     glowIntensity,
+    activeColor,
+    inactiveColor,
 }: {
     filled: boolean;
     halfFilled: boolean;
     size: number;
     glowIntensity: Animated.Value;
+    activeColor: string;
+    inactiveColor: string;
 }) {
     const getIcon = (): 'star' | 'star-half-full' | 'star-o' => {
         if (filled) return 'star';
@@ -36,11 +40,11 @@ function GlowStar({
             style={[
                 styles.starContainer,
                 isActive && {
-                    shadowColor: colors.star,
+                    shadowColor: activeColor,
                     shadowOffset: { width: 0, height: 0 },
                     shadowOpacity: glowIntensity.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0.3, 0.8],
+                        outputRange: [0.25, 0.7],
                     }),
                     shadowRadius: glowIntensity.interpolate({
                         inputRange: [0, 1],
@@ -52,13 +56,14 @@ function GlowStar({
             <FontAwesome
                 name={getIcon()}
                 size={size}
-                color={isActive ? colors.star : colors.text.muted}
+                color={isActive ? activeColor : inactiveColor}
             />
         </Animated.View>
     );
 }
 
 export function StarRating({ value, onChange, onCommit, size = 30, readonly = false }: StarRatingProps) {
+    const { theme } = useAppTheme();
     const display = value;
     const touchSize = size + 8;
     const trackWidthRef = useRef(0);
@@ -68,7 +73,6 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
     const onChangeRef = useRef(onChange);
     const onCommitRef = useRef(onCommit);
 
-    // Keep refs updated
     useEffect(() => {
         valueRef.current = value;
     }, [value]);
@@ -81,7 +85,6 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
         onCommitRef.current = onCommit;
     }, [onCommit]);
 
-    // Pulsing glow animation - use useEffect, not useMemo
     useEffect(() => {
         if (readonly || !onChange) return;
 
@@ -102,7 +105,7 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
         animation.start();
 
         return () => animation.stop();
-    }, [readonly, onChange]);
+    }, [glowAnim, onChange, readonly]);
 
     const resolveRatingFromLocalX = (localX: number): number => {
         const width = trackWidthRef.current;
@@ -113,11 +116,9 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
         const starIndex = Math.min(5, Math.max(1, Math.floor(clamped / slotWidth) + 1));
         const inSlotX = clamped - (starIndex - 1) * slotWidth;
 
-        // Left half = .5, right half = full star
         return inSlotX < slotWidth / 2 ? starIndex - 0.5 : starIndex;
     };
 
-    // Create panResponder once with stable refs
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => !readonly && !!onChangeRef.current,
@@ -127,27 +128,22 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
             onPanResponderGrant: (event) => {
                 if (readonly || !onChangeRef.current) return;
                 startLocalXRef.current = event.nativeEvent.locationX;
-                const next = resolveRatingFromLocalX(startLocalXRef.current);
-                onChangeRef.current(next);
+                onChangeRef.current(resolveRatingFromLocalX(startLocalXRef.current));
             },
             onPanResponderMove: (_event, gestureState) => {
                 if (readonly || !onChangeRef.current) return;
-                const localX = startLocalXRef.current + gestureState.dx;
-                const next = resolveRatingFromLocalX(localX);
-                onChangeRef.current(next);
+                onChangeRef.current(resolveRatingFromLocalX(startLocalXRef.current + gestureState.dx));
             },
             onPanResponderRelease: (_event, gestureState) => {
                 if (readonly || !onChangeRef.current) return;
-                const localX = startLocalXRef.current + gestureState.dx;
-                const next = resolveRatingFromLocalX(localX);
+                const next = resolveRatingFromLocalX(startLocalXRef.current + gestureState.dx);
                 onChangeRef.current(next);
                 onCommitRef.current?.(next);
             },
             onPanResponderTerminationRequest: () => false,
             onPanResponderTerminate: (_event, gestureState) => {
                 if (readonly || !onChangeRef.current) return;
-                const localX = startLocalXRef.current + gestureState.dx;
-                const next = resolveRatingFromLocalX(localX);
+                const next = resolveRatingFromLocalX(startLocalXRef.current + gestureState.dx);
                 onChangeRef.current(next);
                 onCommitRef.current?.(next);
             },
@@ -168,7 +164,7 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
                             <FontAwesome
                                 name={display >= star ? 'star' : display >= star - 0.5 ? 'star-half-full' : 'star-o'}
                                 size={size}
-                                color={display >= star - 0.5 ? colors.star : colors.text.muted}
+                                color={display >= star - 0.5 ? theme.colors.star : theme.colors.starEmpty}
                             />
                         </View>
                     ))}
@@ -197,6 +193,8 @@ export function StarRating({ value, onChange, onCommit, size = 30, readonly = fa
                             halfFilled={display >= star - 0.5 && display < star}
                             size={size}
                             glowIntensity={glowAnim}
+                            activeColor={theme.colors.star}
+                            inactiveColor={theme.colors.starEmpty}
                         />
                     </View>
                 ))}
@@ -220,7 +218,5 @@ const styles = StyleSheet.create({
         marginHorizontal: 1,
         borderRadius: 9999,
     },
-    starContainer: {
-        // Container for glow effect
-    },
+    starContainer: {},
 });

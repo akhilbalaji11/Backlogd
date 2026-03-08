@@ -19,13 +19,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StarRating } from '../../src/components/ui/StarRating';
-import type { GameDetail, GameStatus, GameSearchResult, InvolvedCompany } from '../../src/domain/types';
+import { ThemeBackdrop } from '../../src/components/ui/ThemeBackdrop';
+import { ThemeModeToggle } from '../../src/components/ui/ThemeModeToggle';
+import type { CharacterCredit, GameDetail, GameStatus, GameSearchResult, InvolvedCompany } from '../../src/domain/types';
 import { useDynamicTheme, hexToRgba } from '../../src/hooks/useDynamicTheme';
 import { gamesApi } from '../../src/lib/api';
 import { supabase } from '../../src/lib/supabase';
 import { withTimeout } from '../../src/lib/withTimeout';
 import { useAuthStore } from '../../src/stores/authStore';
 import { colors, radius, spacing, typography, STATUS_LABELS, STATUS_ICONS, GENRE_COLORS, PLATFORM_COLORS } from '../../src/styles/tokens';
+import { useAppTheme } from '../../src/theme/appTheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = 320;
@@ -96,7 +99,8 @@ function StatusButton({
     onPress: () => void;
     isLoading: boolean;
 }) {
-    const statusColor = colors.status[status];
+    const { theme } = useAppTheme();
+    const statusColor = theme.colors.status[status];
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const glowAnim = useRef(new Animated.Value(0)).current;
 
@@ -150,8 +154,8 @@ function StatusButton({
                     styles.statusBtn,
                     {
                         transform: [{ scale: scaleAnim }],
-                        borderColor: isActive ? statusColor : colors.border,
-                        backgroundColor: isActive ? statusColor + '15' : colors.bg.card,
+                        borderColor: isActive ? statusColor : theme.colors.border,
+                        backgroundColor: isActive ? `${statusColor}15` : theme.colors.surface.glassStrong,
                     },
                 ]}
             >
@@ -173,12 +177,12 @@ function StatusButton({
                 <Ionicons
                     name={STATUS_ICONS[status] as any}
                     size={20}
-                    color={isActive ? statusColor : colors.text.muted}
+                    color={isActive ? statusColor : theme.colors.text.muted}
                 />
                 <Text
                     style={[
                         styles.statusBtnText,
-                        { color: isActive ? statusColor : colors.text.muted },
+                        { color: isActive ? statusColor : theme.colors.text.muted },
                     ]}
                 >
                     {STATUS_LABELS[status]}
@@ -220,43 +224,103 @@ function GenreChip({ genre }: { genre: string }) {
 
 // Platform indicator
 function PlatformIndicator({ platform }: { platform: string }) {
-    const platformColor = PLATFORM_COLORS[platform] || colors.text.muted;
+    const { theme } = useAppTheme();
+    const platformColor = PLATFORM_COLORS[platform] || theme.colors.text.muted;
 
     return (
         <View style={styles.platformIndicator}>
             <View style={[styles.platformDot, { backgroundColor: platformColor }]} />
-            <Text style={styles.platformText}>{platform}</Text>
+            <Text style={[styles.platformText, { color: theme.colors.text.secondary }]}>{platform}</Text>
         </View>
     );
 }
 
 // Company Credits component
 function CompanyCredits({ involvedCompanies }: { involvedCompanies?: InvolvedCompany[] }) {
+    const { theme } = useAppTheme();
     if (!involvedCompanies || involvedCompanies.length === 0) return null;
 
-    const developers = involvedCompanies.filter(ic => ic.developer);
-    const publishers = involvedCompanies.filter(ic => ic.publisher);
+    const developers = Array.from(
+        new Set(
+            involvedCompanies
+                .filter((company) => company.developer && company.company.name)
+                .map((company) => company.company.name)
+        )
+    );
+    const publishers = Array.from(
+        new Set(
+            involvedCompanies
+                .filter((company) => company.publisher && company.company.name)
+                .map((company) => company.company.name)
+        )
+    );
 
     if (developers.length === 0 && publishers.length === 0) return null;
 
     return (
-        <View style={styles.creditsSection}>
+        <View style={[styles.creditsSection, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
             {developers.length > 0 && (
                 <View style={styles.creditRow}>
-                    <Text style={styles.creditLabel}>Developed by</Text>
-                    <Text style={styles.creditValue}>
-                        {developers.map(d => d.company.name).join(', ')}
+                    <Text style={[styles.creditLabel, { color: theme.colors.text.muted }]}>Developed by</Text>
+                    <Text style={[styles.creditValue, { color: theme.colors.text.primary }]}>
+                        {developers.join(', ')}
                     </Text>
                 </View>
             )}
             {publishers.length > 0 && (
                 <View style={styles.creditRow}>
-                    <Text style={styles.creditLabel}>Published by</Text>
-                    <Text style={styles.creditValue}>
-                        {publishers.map(p => p.company.name).join(', ')}
+                    <Text style={[styles.creditLabel, { color: theme.colors.text.muted }]}>Published by</Text>
+                    <Text style={[styles.creditValue, { color: theme.colors.text.primary }]}>
+                        {publishers.join(', ')}
                     </Text>
                 </View>
             )}
+        </View>
+    );
+}
+
+function CharacterCredits({
+    characters,
+    accentColor,
+}: {
+    characters?: CharacterCredit[];
+    accentColor: string;
+}) {
+    const { theme } = useAppTheme();
+    if (!characters || characters.length === 0) return null;
+
+    return (
+        <View style={styles.characterSection}>
+            <Text style={[styles.sectionTitle, styles.characterSectionTitle, { color: accentColor }]}>Cast</Text>
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.characterRow}
+            >
+                {characters.map((character) => (
+                    <View
+                        key={character.id}
+                        style={[
+                            styles.characterCard,
+                            { borderColor: hexToRgba(accentColor, 0.35), backgroundColor: hexToRgba(accentColor, 0.08) },
+                        ]}
+                    >
+                        {character.imageUrl ? (
+                            <Image
+                                source={{ uri: character.imageUrl }}
+                                style={styles.characterImage}
+                                contentFit="cover"
+                                transition={150}
+                            />
+                        ) : (
+                            <View style={[styles.characterPlaceholder, { backgroundColor: theme.colors.bg.secondary }]}>
+                                <Ionicons name="person" size={18} color={accentColor} />
+                            </View>
+                        )}
+                        <Text style={[styles.characterName, { color: theme.colors.text.primary }]} numberOfLines={2}>{character.name}</Text>
+                    </View>
+                ))}
+            </ScrollView>
         </View>
     );
 }
@@ -266,6 +330,7 @@ export default function GameDetailScreen() {
     const router = useRouter();
     const qc = useQueryClient();
     const { user } = useAuthStore();
+    const { theme } = useAppTheme();
     const [currentStatus, setCurrentStatus] = useState<GameStatus | null>(null);
     const [userRating, setUserRating] = useState<number>(0);
     const [persistedRating, setPersistedRating] = useState<number>(0);
@@ -275,11 +340,17 @@ export default function GameDetailScreen() {
     const { data: game, isLoading } = useQuery<GameDetail>({
         queryKey: ['game-detail', id],
         queryFn: () => gamesApi.getById(id),
-        staleTime: 1000 * 60 * 60,
+        staleTime: 1000 * 60,
+        gcTime: 1000 * 60 * 10,
+        refetchOnMount: 'always',
     });
 
     // Dynamic theme based on cover image
     const dynamicTheme = useDynamicTheme(game?.coverUrl);
+    const accentColor = dynamicTheme?.vibrant ?? theme.colors.hero.primary;
+    const surfaceTint = dynamicTheme
+        ? hexToRgba(dynamicTheme.dominant, theme.isDark ? 0.16 : 0.1)
+        : theme.colors.surface.glassStrong;
 
     // Load user's existing status and rating
     const { data: userActivity } = useQuery({
@@ -424,24 +495,29 @@ export default function GameDetailScreen() {
 
     if (isLoading) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.neon.cyan} />
+            <View style={[styles.loadingContainer, { backgroundColor: theme.colors.bg.primary }]}>
+                <ThemeBackdrop />
+                <ActivityIndicator size="large" color={theme.colors.hero.primary} />
             </View>
         );
     }
 
     if (!game) {
         return (
-            <SafeAreaView style={styles.container}>
-                <Text style={styles.errorText}>Game not found.</Text>
-            </SafeAreaView>
+            <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+                <ThemeBackdrop />
+                <SafeAreaView style={styles.container}>
+                    <Text style={[styles.errorText, { color: theme.colors.text.secondary }]}>Game not found.</Text>
+                </SafeAreaView>
+            </View>
         );
     }
 
     const normalizedRating = game.rating ? (game.rating / 20).toFixed(1) : null;
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+            <ThemeBackdrop />
             <Animated.ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
@@ -473,8 +549,8 @@ export default function GameDetailScreen() {
                     {/* Gradients */}
                     <LinearGradient
                         colors={dynamicTheme
-                            ? [hexToRgba(dynamicTheme.dominant, 0.3), hexToRgba(dynamicTheme.dominant, 0.6), colors.bg.primary]
-                            : ['rgba(6,6,10,0.3)', 'rgba(6,6,10,0.6)', colors.bg.primary]
+                            ? [hexToRgba(dynamicTheme.dominant, 0.3), hexToRgba(dynamicTheme.dominant, 0.6), theme.colors.bg.primary]
+                            : [theme.colors.surface.overlay, theme.colors.surface.overlay, theme.colors.bg.primary]
                         }
                         style={styles.heroGradient}
                     />
@@ -482,42 +558,45 @@ export default function GameDetailScreen() {
 
                     {/* Back button */}
                     <SafeAreaView style={styles.backButtonContainer}>
-                        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                            <Ionicons name="chevron-back" size={24} color={colors.white} />
-                        </TouchableOpacity>
+                        <View style={styles.heroTopBar}>
+                            <TouchableOpacity style={[styles.backButton, { backgroundColor: theme.colors.surface.overlay }]} onPress={() => router.back()}>
+                                <Ionicons name="chevron-back" size={24} color={theme.colors.white} />
+                            </TouchableOpacity>
+                            <ThemeModeToggle compact />
+                        </View>
                     </SafeAreaView>
                 </View>
 
                 {/* ===== CONTENT SECTION ===== */}
                 <View style={styles.content}>
                     {/* Game cover + info row */}
-                    <View style={styles.gameHeader}>
+                    <View style={[styles.gameHeader, { backgroundColor: surfaceTint, borderColor: hexToRgba(accentColor, 0.2) }]}>
                         <View style={styles.coverWrapper}>
-                            <View style={[styles.coverGlow, { backgroundColor: dynamicTheme?.vibrant ?? colors.neon.cyan }]} />
+                            <View style={[styles.coverGlow, { backgroundColor: accentColor }]} />
                             {game.coverUrl ? (
                                 <Image
                                     source={{ uri: game.coverUrl }}
-                                    style={styles.gameCover}
+                                    style={[styles.gameCover, { borderColor: theme.colors.border }]}
                                     contentFit="cover"
                                     transition={200}
                                 />
                             ) : (
-                                <View style={styles.coverPlaceholder}>
-                                    <Ionicons name="game-controller" size={32} color={colors.text.muted} />
+                                <View style={[styles.coverPlaceholder, { backgroundColor: theme.colors.bg.secondary, borderColor: theme.colors.border }]}>
+                                    <Ionicons name="game-controller" size={32} color={theme.colors.text.muted} />
                                 </View>
                             )}
                         </View>
 
                         <View style={styles.gameInfo}>
-                            <Text style={styles.gameTitle} numberOfLines={3}>{game.title}</Text>
+                            <Text style={[styles.gameTitle, { color: theme.colors.text.primary }]} numberOfLines={3}>{game.title}</Text>
                             {game.releaseDate && (
-                                <Text style={styles.gameYear}>{new Date(game.releaseDate).getFullYear()}</Text>
+                                <Text style={[styles.gameYear, { color: theme.colors.text.secondary }]}>{new Date(game.releaseDate).getFullYear()}</Text>
                             )}
                             {normalizedRating && (
-                                <View style={styles.communityRating}>
-                                    <Ionicons name="star" size={16} color={colors.star} />
+                                <View style={[styles.communityRating, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+                                    <Ionicons name="star" size={16} color={theme.colors.star} />
                                     <Text style={styles.ratingValue}>{normalizedRating}</Text>
-                                    <Text style={styles.ratingSource}>IGDB</Text>
+                                    <Text style={[styles.ratingSource, { color: theme.colors.text.secondary }]}>IGDB</Text>
                                 </View>
                             )}
                         </View>
@@ -543,24 +622,39 @@ export default function GameDetailScreen() {
                                 <PlatformIndicator key={platform} platform={platform} />
                             ))}
                             {game.platforms.length > 5 && (
-                                <Text style={styles.morePlatforms}>+{game.platforms.length - 5}</Text>
+                                <Text style={[styles.morePlatforms, { color: theme.colors.text.muted }]}>+{game.platforms.length - 5}</Text>
                             )}
                         </View>
                     )}
 
                     {/* Description */}
                     {game.description && (
-                        <View style={styles.descriptionSection}>
-                            <Text style={styles.descriptionText}>{game.description}</Text>
+                        <View style={[styles.descriptionSection, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+                            <Text style={[styles.sectionTitle, { color: accentColor }]}>Overview</Text>
+                            <Text style={[styles.descriptionText, { color: theme.colors.text.secondary }]}>{game.description}</Text>
                         </View>
                     )}
 
                     {/* Company Credits */}
                     <CompanyCredits involvedCompanies={game.involvedCompanies} />
 
+                    {/* Character Credits */}
+                    <CharacterCredits
+                        characters={game.characterCredits}
+                        accentColor={accentColor}
+                    />
+
                     {/* ===== USER ACTIONS ===== */}
-                    <View style={styles.actionsSection}>
-                        <Text style={styles.sectionTitle}>Your Activity</Text>
+                    <View
+                        style={[
+                            styles.actionsSection,
+                            {
+                                borderColor: hexToRgba(accentColor, 0.35),
+                                backgroundColor: surfaceTint,
+                            },
+                        ]}
+                    >
+                        <Text style={[styles.sectionTitle, { color: accentColor }]}>Your Activity</Text>
 
                         {/* Status buttons */}
                         <View style={styles.statusButtonsRow}>
@@ -577,7 +671,7 @@ export default function GameDetailScreen() {
 
                         {/* Rating */}
                         <View style={styles.ratingSection}>
-                            <Text style={styles.ratingLabel}>Your Rating</Text>
+                            <Text style={[styles.ratingLabel, { color: theme.colors.text.secondary }]}>Your Rating</Text>
                             <View style={styles.ratingContainer}>
                                 <StarRating
                                     value={userRating}
@@ -593,12 +687,12 @@ export default function GameDetailScreen() {
 
                         {/* Write review button */}
                         <TouchableOpacity
-                            style={styles.reviewButton}
+                            style={[styles.reviewButton, { borderColor: accentColor, backgroundColor: hexToRgba(accentColor, 0.1) }]}
                             onPress={() => router.push({ pathname: '/review-editor', params: { gameId: game.id, gameTitle: game.title } })}
                             activeOpacity={0.85}
                         >
-                            <Ionicons name="create-outline" size={20} color={colors.neon.pink} />
-                            <Text style={styles.reviewButtonText}>Write a Review</Text>
+                            <Ionicons name="create-outline" size={20} color={accentColor} />
+                            <Text style={[styles.reviewButtonText, { color: accentColor }]}>Write a Review</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -656,9 +750,15 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 0,
         left: 0,
+        right: 0,
+    },
+    heroTopBar: {
+        margin: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
     backButton: {
-        margin: spacing.md,
         width: 40,
         height: 40,
         borderRadius: 20,
@@ -678,6 +778,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: spacing.lg,
         marginBottom: spacing.lg,
+        borderRadius: radius.xl,
+        borderWidth: 1,
+        padding: spacing.lg,
     },
     coverWrapper: {
         position: 'relative',
@@ -730,6 +833,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.xs,
         marginTop: spacing.xs,
+        alignSelf: 'flex-start',
+        borderRadius: radius.full,
+        borderWidth: 1,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 6,
     },
     ratingValue: {
         fontSize: typography.size.lg,
@@ -791,18 +899,25 @@ const styles = StyleSheet.create({
     // Description
     descriptionSection: {
         marginBottom: spacing.xl,
+        borderRadius: radius.xl,
+        borderWidth: 1,
+        padding: spacing.lg,
     },
     descriptionText: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_400Regular',
         color: colors.text.secondary,
         lineHeight: 24,
+        marginTop: spacing.sm,
     },
 
     // Company Credits
     creditsSection: {
         marginBottom: spacing.xl,
         gap: spacing.sm,
+        borderRadius: radius.xl,
+        borderWidth: 1,
+        padding: spacing.lg,
     },
     creditRow: {
         flexDirection: 'row',
@@ -819,6 +934,44 @@ const styles = StyleSheet.create({
         fontFamily: 'Inter_600SemiBold',
         color: colors.text.primary,
         flex: 1,
+    },
+
+    // Character credits
+    characterSection: {
+        marginBottom: spacing.xl,
+    },
+    characterSectionTitle: {
+        marginBottom: spacing.md,
+    },
+    characterRow: {
+        gap: spacing.sm,
+    },
+    characterCard: {
+        width: 104,
+        padding: spacing.sm,
+        borderRadius: radius.lg,
+        borderWidth: 1,
+        gap: spacing.sm,
+    },
+    characterImage: {
+        width: '100%',
+        aspectRatio: 1,
+        borderRadius: radius.md,
+        backgroundColor: colors.bg.tertiary,
+    },
+    characterPlaceholder: {
+        width: '100%',
+        aspectRatio: 1,
+        borderRadius: radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.bg.tertiary,
+    },
+    characterName: {
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_500Medium',
+        color: colors.text.primary,
+        lineHeight: 18,
     },
 
     // Actions section

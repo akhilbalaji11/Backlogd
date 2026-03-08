@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -16,117 +17,62 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { z } from 'zod';
+
 import { FormField } from '../../src/components/ui/FormField';
+import { ThemeBackdrop } from '../../src/components/ui/ThemeBackdrop';
+import { ThemeModeToggle } from '../../src/components/ui/ThemeModeToggle';
 import { supabase } from '../../src/lib/supabase';
-import { colors, radius, spacing, typography } from '../../src/styles/tokens';
+import { useAppTheme } from '../../src/theme/appTheme';
 
 const schema = z.object({
     displayName: z.string().min(2, 'Name must be at least 2 characters').max(30),
     email: z.string().email('Invalid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirmPassword: z.string(),
-}).refine((d) => d.password === d.confirmPassword, {
+}).refine((data) => data.password === data.confirmPassword, {
     message: "Passwords don't match",
     path: ['confirmPassword'],
 });
+
 type FormData = z.infer<typeof schema>;
 
-// Neon submit button with gradient
-function NeonSubmitButton({
-    title,
-    loadingTitle,
-    onPress,
-    isLoading,
-}: {
-    title: string;
-    loadingTitle: string;
-    onPress: () => void;
-    isLoading: boolean;
-}) {
-    const glowAnim = useRef(new Animated.Value(0.4)).current;
-
-    useEffect(() => {
-        if (!isLoading) {
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(glowAnim, {
-                        toValue: 0.7,
-                        duration: 1500,
-                        useNativeDriver: false,
-                    }),
-                    Animated.timing(glowAnim, {
-                        toValue: 0.4,
-                        duration: 1500,
-                        useNativeDriver: false,
-                    }),
-                ])
-            ).start();
-        }
-    }, [isLoading]);
-
+function ProgressPill({ active }: { active: boolean }) {
+    const { theme } = useAppTheme();
     return (
-        <TouchableOpacity
-            onPress={onPress}
-            disabled={isLoading}
-            activeOpacity={0.9}
-            style={styles.submitBtnContainer}
-        >
-            <Animated.View
-                style={[
-                    styles.submitBtnGlow,
-                    { opacity: isLoading ? 0.3 : glowAnim },
-                ]}
-            />
-            <View style={[styles.submitBtn, isLoading && styles.submitBtnDisabled]}>
-                {isLoading ? (
-                    <View style={styles.loadingContainer}>
-                        <Ionicons name="sync" size={18} color={colors.bg.primary} />
-                        <Text style={styles.submitBtnText}>{loadingTitle}</Text>
-                    </View>
-                ) : (
-                    <Text style={styles.submitBtnText}>{title}</Text>
-                )}
-            </View>
-        </TouchableOpacity>
-    );
-}
-
-// Step indicator
-function StepIndicator({ current }: { current: number }) {
-    return (
-        <View style={styles.stepIndicator}>
-            {[1, 2, 3, 4].map((step) => (
-                <View
-                    key={step}
-                    style={[
-                        styles.stepDot,
-                        step <= current && styles.stepDotActive,
-                    ]}
-                >
-                    {step < current && (
-                        <Ionicons name="checkmark" size={10} color={colors.bg.primary} />
-                    )}
-                </View>
-            ))}
-        </View>
+        <View
+            style={[
+                styles.progressPill,
+                {
+                    backgroundColor: active ? theme.colors.hero.secondary : theme.colors.surface.glass,
+                    borderColor: active ? theme.colors.hero.secondary : theme.colors.border,
+                },
+            ]}
+        />
     );
 }
 
 export default function SignUpScreen() {
     const router = useRouter();
+    const { theme } = useAppTheme();
     const [isLoading, setIsLoading] = useState(false);
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
         Animated.timing(fadeAnim, {
             toValue: 1,
-            duration: 400,
+            duration: 380,
             useNativeDriver: true,
         }).start();
     }, []);
 
     const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
         resolver: zodResolver(schema),
+        defaultValues: {
+            displayName: '',
+            email: '',
+            password: '',
+            confirmPassword: '',
+        },
     });
 
     const onSubmit = async (data: FormData) => {
@@ -147,241 +93,231 @@ export default function SignUpScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-                <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-                    {/* Back button */}
-                    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                        <Ionicons name="chevron-back" size={24} color={colors.neon.cyan} />
-                    </TouchableOpacity>
-
-                    <Animated.View style={{ opacity: fadeAnim }}>
-                        {/* Header */}
-                        <View style={styles.header}>
-                            <View style={styles.headerIcon}>
-                                <Ionicons name="person-add" size={24} color={colors.neon.purple} />
-                            </View>
-                            <Text style={styles.title}>Create Account</Text>
-                            <Text style={styles.subtitle}>Start your gaming journey today</Text>
-                            <StepIndicator current={1} />
-                        </View>
-
-                        {/* Form */}
-                        <View style={styles.form}>
-                            <Controller
-                                control={control}
-                                name="displayName"
-                                render={({ field: { onChange, onBlur, value } }) => (
-                                    <FormField
-                                        label="Display Name"
-                                        placeholder="GamerTag99"
-                                        value={value}
-                                        onChangeText={onChange}
-                                        onBlur={onBlur}
-                                        error={errors.displayName?.message}
-                                        autoCapitalize="words"
-                                    />
-                                )}
-                            />
-                            <Controller
-                                control={control}
-                                name="email"
-                                render={({ field: { onChange, onBlur, value } }) => (
-                                    <FormField
-                                        label="Email"
-                                        placeholder="you@example.com"
-                                        value={value}
-                                        onChangeText={onChange}
-                                        onBlur={onBlur}
-                                        error={errors.email?.message}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                    />
-                                )}
-                            />
-                            <Controller
-                                control={control}
-                                name="password"
-                                render={({ field: { onChange, onBlur, value } }) => (
-                                    <FormField
-                                        label="Password"
-                                        placeholder="Min 8 characters"
-                                        value={value}
-                                        onChangeText={onChange}
-                                        onBlur={onBlur}
-                                        error={errors.password?.message}
-                                        secureTextEntry
-                                    />
-                                )}
-                            />
-                            <Controller
-                                control={control}
-                                name="confirmPassword"
-                                render={({ field: { onChange, onBlur, value } }) => (
-                                    <FormField
-                                        label="Confirm Password"
-                                        placeholder="••••••••"
-                                        value={value}
-                                        onChangeText={onChange}
-                                        onBlur={onBlur}
-                                        error={errors.confirmPassword?.message}
-                                        secureTextEntry
-                                    />
-                                )}
-                            />
-                        </View>
-
-                        {/* Submit */}
-                        <NeonSubmitButton
-                            title="Create Account"
-                            loadingTitle="Creating account..."
-                            onPress={handleSubmit(onSubmit)}
-                            isLoading={isLoading}
-                        />
-
-                        {/* Footer */}
-                        <View style={styles.footer}>
-                            <Text style={styles.footerText}>Already have an account? </Text>
-                            <TouchableOpacity onPress={() => router.replace('/(auth)/sign-in')}>
-                                <Text style={styles.footerLink}>Sign In</Text>
+        <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+            <ThemeBackdrop />
+            <SafeAreaView style={styles.safeArea}>
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                        <View style={styles.topRow}>
+                            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                                <Ionicons name="chevron-back" size={22} color={theme.colors.text.primary} />
                             </TouchableOpacity>
+                            <ThemeModeToggle compact />
                         </View>
-                    </Animated.View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+
+                        <Animated.View
+                            style={[
+                                styles.panel,
+                                {
+                                    opacity: fadeAnim,
+                                    backgroundColor: theme.colors.surface.glassStrong,
+                                    borderColor: theme.colors.border,
+                                    shadowColor: theme.colors.surface.cardShadow,
+                                },
+                            ]}
+                        >
+                            <View style={[styles.headerBadge, { backgroundColor: `${theme.colors.hero.secondary}18`, borderColor: `${theme.colors.hero.secondary}38` }]}>
+                                <Ionicons name="sparkles" size={22} color={theme.colors.hero.secondary} />
+                            </View>
+                            <Text style={[styles.title, { color: theme.colors.text.primary }]}>Build Your Player Card</Text>
+                            <Text style={[styles.subtitle, { color: theme.colors.text.secondary }]}>
+                                Create your account and start logging the games that actually define your taste.
+                            </Text>
+
+                            <View style={styles.progressRow}>
+                                <ProgressPill active />
+                                <ProgressPill active />
+                                <ProgressPill active={false} />
+                            </View>
+
+                            <View style={styles.form}>
+                                <Controller
+                                    control={control}
+                                    name="displayName"
+                                    render={({ field: { onChange, onBlur, value } }) => (
+                                        <FormField
+                                            label="Display Name"
+                                            placeholder="Your gamer tag"
+                                            value={value}
+                                            onChangeText={onChange}
+                                            onBlur={onBlur}
+                                            error={errors.displayName?.message}
+                                            autoCapitalize="words"
+                                        />
+                                    )}
+                                />
+                                <Controller
+                                    control={control}
+                                    name="email"
+                                    render={({ field: { onChange, onBlur, value } }) => (
+                                        <FormField
+                                            label="Email"
+                                            placeholder="you@example.com"
+                                            value={value}
+                                            onChangeText={onChange}
+                                            onBlur={onBlur}
+                                            error={errors.email?.message}
+                                            keyboardType="email-address"
+                                            autoCapitalize="none"
+                                        />
+                                    )}
+                                />
+                                <Controller
+                                    control={control}
+                                    name="password"
+                                    render={({ field: { onChange, onBlur, value } }) => (
+                                        <FormField
+                                            label="Password"
+                                            placeholder="Minimum 8 characters"
+                                            value={value}
+                                            onChangeText={onChange}
+                                            onBlur={onBlur}
+                                            error={errors.password?.message}
+                                            secureTextEntry
+                                        />
+                                    )}
+                                />
+                                <Controller
+                                    control={control}
+                                    name="confirmPassword"
+                                    render={({ field: { onChange, onBlur, value } }) => (
+                                        <FormField
+                                            label="Confirm Password"
+                                            placeholder="Repeat your password"
+                                            value={value}
+                                            onChangeText={onChange}
+                                            onBlur={onBlur}
+                                            error={errors.confirmPassword?.message}
+                                            secureTextEntry
+                                        />
+                                    )}
+                                />
+                            </View>
+
+                            <TouchableOpacity onPress={handleSubmit(onSubmit)} disabled={isLoading} activeOpacity={0.92}>
+                                <LinearGradient
+                                    colors={[theme.colors.hero.secondary, theme.colors.hero.tertiary]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                    style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+                                >
+                                    <View style={styles.submitButtonContent}>
+                                        {isLoading && <Ionicons name="sync" size={16} color={theme.colors.white} />}
+                                        <Text style={styles.submitButtonText}>{isLoading ? 'Creating Account...' : 'Create Account'}</Text>
+                                    </View>
+                                </LinearGradient>
+                            </TouchableOpacity>
+
+                            <View style={styles.footer}>
+                                <Text style={[styles.footerText, { color: theme.colors.text.secondary }]}>Already have an account?</Text>
+                                <TouchableOpacity onPress={() => router.replace('/(auth)/sign-in')}>
+                                    <Text style={[styles.footerLink, { color: theme.colors.hero.secondary }]}>Sign In</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </Animated.View>
+                    </ScrollView>
+                </KeyboardAvoidingView>
+            </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.bg.primary,
-    },
+    container: { flex: 1 },
+    safeArea: { flex: 1 },
     scroll: {
         flexGrow: 1,
-        paddingHorizontal: spacing.lg,
-        paddingTop: spacing.md,
+        paddingHorizontal: 20,
+        paddingBottom: 24,
+        justifyContent: 'center',
+    },
+    topRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
     },
     backBtn: {
-        width: 44,
-        height: 44,
+        width: 46,
+        height: 46,
+        borderRadius: 23,
+        alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: spacing.lg,
     },
-    header: {
-        marginBottom: spacing.xl,
+    panel: {
+        borderRadius: 30,
+        borderWidth: 1,
+        padding: 24,
+        justifyContent: 'center',
     },
-    headerIcon: {
+    headerBadge: {
         width: 56,
         height: 56,
-        borderRadius: radius.lg,
-        backgroundColor: colors.neon.purple + '15',
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: spacing.lg,
         borderWidth: 1,
-        borderColor: colors.neon.purple + '30',
+        marginBottom: 18,
     },
     title: {
-        fontSize: typography.size['2xl'],
+        fontSize: 29,
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
-        letterSpacing: -0.5,
+        letterSpacing: -1,
     },
     subtitle: {
-        fontSize: typography.size.base,
+        marginTop: 10,
+        fontSize: 15,
+        lineHeight: 22,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
-        marginTop: spacing.xs,
-        marginBottom: spacing.lg,
     },
-
-    // Step indicator
-    stepIndicator: {
+    progressRow: {
         flexDirection: 'row',
-        gap: spacing.sm,
-        marginTop: spacing.md,
+        gap: 8,
+        marginTop: 16,
+        marginBottom: 22,
     },
-    stepDot: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: colors.bg.card,
-        borderWidth: 1.5,
-        borderColor: colors.border,
-        alignItems: 'center',
-        justifyContent: 'center',
+    progressPill: {
+        flex: 1,
+        height: 8,
+        borderRadius: 999,
+        borderWidth: 1,
     },
-    stepDotActive: {
-        backgroundColor: colors.neon.purple,
-        borderColor: colors.neon.purple,
-        shadowColor: colors.neon.purple,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-    },
-
-    // Form
     form: {
-        gap: spacing.base,
-        marginBottom: spacing.xl,
+        gap: 18,
+        marginBottom: 24,
     },
-
-    // Submit button
-    submitBtnContainer: {
-        position: 'relative',
-        borderRadius: radius.lg,
-    },
-    submitBtnGlow: {
-        position: 'absolute',
-        top: -2,
-        left: -2,
-        right: -2,
-        bottom: -2,
-        borderRadius: radius.lg + 2,
-        backgroundColor: colors.neon.purple,
-        shadowColor: colors.neon.purple,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 16,
-    },
-    submitBtn: {
-        backgroundColor: colors.neon.purple,
-        borderRadius: radius.lg,
-        paddingVertical: spacing.base + 4,
+    submitButton: {
+        borderRadius: 20,
+        paddingVertical: 18,
         alignItems: 'center',
     },
-    submitBtnDisabled: {
-        opacity: 0.7,
+    submitButtonDisabled: {
+        opacity: 0.72,
     },
-    loadingContainer: {
+    submitButtonContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.sm,
+        gap: 8,
     },
-    submitBtnText: {
-        fontSize: typography.size.md,
+    submitButtonText: {
+        color: '#ffffff',
+        fontSize: 16,
         fontFamily: 'Inter_700Bold',
-        color: colors.white,
         letterSpacing: 0.3,
     },
-
-    // Footer
     footer: {
         flexDirection: 'row',
         justifyContent: 'center',
-        marginTop: spacing.xl,
-        paddingVertical: spacing.md,
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 20,
     },
     footerText: {
-        fontSize: typography.size.base,
+        fontSize: 14,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
     },
     footerLink: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.neon.purple,
+        fontSize: 14,
+        fontFamily: 'Inter_700Bold',
     },
 });

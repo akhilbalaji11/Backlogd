@@ -1,366 +1,101 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Dimensions,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { ActivityEvent, ActivityType, GameSearchResult, GameStatus } from '../../../src/domain/types';
+import { GameCard, GameHeroCard } from '../../../src/components/game/GameCard';
+import { ThemeBackdrop } from '../../../src/components/ui/ThemeBackdrop';
+import { ThemeModeToggle } from '../../../src/components/ui/ThemeModeToggle';
+import type { ActivityEvent, ActivityType, GameSearchResult } from '../../../src/domain/types';
 import { IGDB_GENRE_IDS } from '../../../src/domain/types';
 import { gamesApi } from '../../../src/lib/api';
 import { buildPreferenceVector, recommend } from '../../../src/lib/recommender';
 import { supabase } from '../../../src/lib/supabase';
 import { withTimeout } from '../../../src/lib/withTimeout';
 import { useAuthStore } from '../../../src/stores/authStore';
-import { colors, radius, spacing, typography, PLATFORM_COLORS, GENRE_COLORS } from '../../../src/styles/tokens';
+import { useAppTheme } from '../../../src/theme/appTheme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = SCREEN_WIDTH * 0.38;
-
-// ===== SHIMMER COMPONENT =====
-function ShimmerView({ width, height }: { width: number; height: number }) {
-    const shimmerAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        const animation = Animated.loop(
-            Animated.sequence([
-                Animated.timing(shimmerAnim, {
-                    toValue: 1,
-                    duration: 2000,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(shimmerAnim, {
-                    toValue: 0,
-                    duration: 2000,
-                    useNativeDriver: true,
-                }),
-            ])
-        );
-        animation.start();
-        return () => animation.stop();
-    }, [shimmerAnim]);
-
-    const translateX = shimmerAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-width, width],
-    });
-
+function SectionHeader({ icon, title, subtitle, accent }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; accent: string }) {
+    const { theme } = useAppTheme();
     return (
-        <Animated.View
-            style={[
-                styles.shimmer,
-                {
-                    width: width * 2,
-                    height,
-                    transform: [{ translateX }],
-                },
-            ]}
-            pointerEvents="none"
-        >
-            <LinearGradient
-                colors={['transparent', 'rgba(255,255,255,0.15)', 'transparent']}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={StyleSheet.absoluteFillObject}
-            />
-        </Animated.View>
-    );
-}
-
-// ===== TRENDING GAME POSTER =====
-function TrendingGamePoster({ game, onPress }: { game: GameSearchResult; onPress?: () => void }) {
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    const [imageError, setImageError] = useState(false);
-    const normalizedRating = game.rating ? (game.rating / 20).toFixed(1) : null;
-    const coverUrl = game.coverUrl?.replace('t_cover_big', 't_cover_big_2x');
-    const showImage = coverUrl && !imageError;
-
-    const handlePressIn = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 0.95,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    const handlePressOut = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    return (
-        <TouchableOpacity
-            style={styles.posterContainer}
-            onPress={onPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.9}
-        >
-            <Animated.View style={[styles.poster, { transform: [{ scale: scaleAnim }] }]}>
-                <View style={styles.coverWrapper}>
-                    {/* Neon glow effect */}
-                    <View style={styles.coverGlow} />
-
-                    {showImage ? (
-                        <Image
-                            source={{ uri: coverUrl }}
-                            style={styles.cover}
-                            contentFit="cover"
-                            transition={200}
-                            onError={() => setImageError(true)}
-                        />
-                    ) : (
-                        <View style={styles.coverPlaceholder}>
-                            <Ionicons name="game-controller" size={36} color={colors.text.muted} />
-                        </View>
-                    )}
-
-                    {/* Bottom gradient */}
-                    <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.8)']}
-                        style={styles.gradientOverlay}
-                        pointerEvents="none"
-                    />
-                </View>
-
-                {/* Game info */}
-                <View style={styles.posterInfo}>
-                    <Text style={styles.posterTitle} numberOfLines={2}>{game.title}</Text>
-                    <View style={styles.posterMeta}>
-                        {game.releaseDate && (
-                            <Text style={styles.posterYear}>{new Date(game.releaseDate).getFullYear()}</Text>
-                        )}
-                        {normalizedRating && (
-                            <View style={styles.posterRating}>
-                                <Ionicons name="star" size={12} color={colors.star} />
-                                <Text style={styles.posterRatingValue}>{normalizedRating}</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Genre chips */}
-                    {game.genres.length > 0 && (
-                        <View style={styles.genreChips}>
-                            {game.genres.slice(0, 2).map((genre) => {
-                                const genreStyle = GENRE_COLORS[genre] || GENRE_COLORS.default;
-                                return (
-                                    <View key={genre} style={[styles.genreChip, { backgroundColor: genreStyle.bg }]}>
-                                        <Text style={[styles.genreChipText, { color: genreStyle.text }]}>{genre}</Text>
-                                    </View>
-                                );
-                            })}
-                        </View>
-                    )}
-                </View>
-            </Animated.View>
-        </TouchableOpacity>
-    );
-}
-
-// ===== RECOMMENDATION CARD =====
-function RecommendationCard({
-    recommendation,
-    onPress,
-}: {
-    recommendation: { game: GameSearchResult; reason: string; score: number };
-    onPress?: () => void;
-}) {
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    const [imageError, setImageError] = useState(false);
-
-    const handlePressIn = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 0.97,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    const handlePressOut = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    const normalizedRating = recommendation.game.rating ? (recommendation.game.rating / 20).toFixed(1) : null;
-    const coverUrl = recommendation.game.coverUrl?.replace('t_cover_big', 't_cover_big_2x');
-    const showImage = coverUrl && !imageError;
-
-    return (
-        <TouchableOpacity
-            style={styles.recommendContainer}
-            onPress={onPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.9}
-        >
-            <Animated.View style={[styles.recommendCard, { transform: [{ scale: scaleAnim }] }]}>
-                {/* Cover section */}
-                <View style={styles.recommendCoverWrapper}>
-                    <View style={styles.recommendGlow} />
-                    {showImage ? (
-                        <Image
-                            source={{ uri: coverUrl }}
-                            style={styles.recommendCover}
-                            contentFit="cover"
-                            transition={200}
-                            onError={() => setImageError(true)}
-                            placeholder={{ blurhash: 'LKO2?U%2Tw=w]~RBVZRi};RPxuwH' }}
-                        />
-                    ) : (
-                        <View style={styles.recommendCoverPlaceholder}>
-                            <Ionicons name="game-controller" size={28} color={colors.text.muted} />
-                        </View>
-                    )}
-                </View>
-
-                {/* Info section */}
-                <View style={styles.recommendInfo}>
-                    <Text style={styles.recommendTitle} numberOfLines={2}>{recommendation.game.title}</Text>
-
-                    <View style={styles.recommendMeta}>
-                        {recommendation.game.releaseDate && (
-                            <Text style={styles.recommendYear}>
-                                {new Date(recommendation.game.releaseDate).getFullYear()}
-                            </Text>
-                        )}
-                        {normalizedRating && (
-                            <View style={styles.recommendRating}>
-                                <Ionicons name="star" size={12} color={colors.star} />
-                                <Text style={styles.recommendRatingValue}>{normalizedRating}</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Reason text */}
-                    <View style={styles.reasonContainer}>
-                        <Ionicons name="sparkles" size={12} color={colors.neon.cyan} />
-                        <Text style={styles.reasonText} numberOfLines={2}>{recommendation.reason}</Text>
-                    </View>
-
-                    {/* Chevron */}
-                    <Ionicons name="chevron-forward" size={18} color={colors.text.muted} style={styles.recommendChevron} />
-                </View>
-            </Animated.View>
-        </TouchableOpacity>
-    );
-}
-
-// ===== ACTIVITY EVENT CARD =====
-function ActivityEventCard({ event }: { event: ActivityEvent }) {
-    const meta = event.metadata as Record<string, any>;
-    const actorName = event.actor?.displayName || 'Someone';
-
-    const getIcon = (type: ActivityType): keyof typeof Ionicons.glyphMap => {
-        switch (type) {
-            case 'review': return 'create';
-            case 'rating': return 'star';
-            case 'status_change': return 'game-controller';
-            case 'list_add': return 'list';
-            case 'follow': return 'person-add';
-            default: return 'ellipse';
-        }
-    };
-
-    const getIconColor = (type: ActivityType): string => {
-        switch (type) {
-            case 'review': return colors.neon.pink;
-            case 'rating': return colors.star;
-            case 'status_change': return colors.neon.cyan;
-            case 'list_add': return colors.neon.lime;
-            case 'follow': return colors.neon.purple;
-            default: return colors.text.muted;
-        }
-    };
-
-    const getLabel = (): string => {
-        const gameTitle = meta?.game_title || 'a game';
-        switch (event.type) {
-            case 'review': return `${actorName} reviewed ${gameTitle}`;
-            case 'rating': return `${actorName} rated ${gameTitle} ${meta?.rating || ''}★`;
-            case 'status_change': return `${actorName} added ${gameTitle} to ${meta?.status || 'collection'}`;
-            case 'list_add': return `${actorName} added ${gameTitle} to "${meta?.list_title || 'a list'}"`;
-            case 'follow': return `${actorName} followed someone`;
-            default: return `${actorName} did something`;
-        }
-    };
-
-    const timeAgo = (iso: string): string => {
-        const diff = Date.now() - new Date(iso).getTime();
-        const mins = Math.floor(diff / 60000);
-        if (mins < 60) return `${mins}m ago`;
-        const hrs = Math.floor(mins / 60);
-        if (hrs < 24) return `${hrs}h ago`;
-        return `${Math.floor(hrs / 24)}d ago`;
-    };
-
-    return (
-        <View style={styles.eventCard}>
-            {/* Avatar */}
-            <View style={styles.eventAvatar}>
-                {event.actor?.avatarUrl ? (
-                    <Image source={{ uri: event.actor.avatarUrl }} style={styles.avatar} />
-                ) : (
-                    <View style={styles.avatarPlaceholder}>
-                        <Ionicons name="person" size={16} color={colors.text.muted} />
-                    </View>
-                )}
+        <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIcon, { backgroundColor: `${accent}18`, borderColor: `${accent}35` }]}>
+                <Ionicons name={icon} size={16} color={accent} />
             </View>
-
-            {/* Content */}
-            <View style={styles.eventContent}>
-                <View style={styles.eventIconRow}>
-                    <Ionicons name={getIcon(event.type)} size={14} color={getIconColor(event.type)} />
-                    <Text style={styles.eventLabel}>{getLabel()}</Text>
-                </View>
-                <Text style={styles.eventTime}>{timeAgo(event.createdAt)}</Text>
+            <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text.primary }]}>{title}</Text>
+                <Text style={[styles.sectionSubtitle, { color: theme.colors.text.secondary }]}>{subtitle}</Text>
             </View>
-
-            {/* Game cover if available */}
-            {meta?.cover_url && (
-                <Image source={{ uri: meta.cover_url }} style={styles.eventCover} />
-            )}
         </View>
     );
 }
 
-// ===== MAIN DISCOVER SCREEN =====
+function ActivityTile({ event }: { event: ActivityEvent }) {
+    const { theme } = useAppTheme();
+    const meta = event.metadata as Record<string, any>;
+    const actorName = event.actor?.displayName || 'Someone';
+
+    const iconByType: Record<ActivityType, keyof typeof Ionicons.glyphMap> = {
+        review: 'create',
+        rating: 'star',
+        status_change: 'game-controller',
+        list_add: 'list',
+        follow: 'people',
+    };
+
+    const accentByType: Record<ActivityType, string> = {
+        review: theme.colors.hero.tertiary,
+        rating: theme.colors.star,
+        status_change: theme.colors.hero.primary,
+        list_add: theme.colors.hero.quaternary,
+        follow: theme.colors.hero.secondary,
+    };
+
+    const labelByType = () => {
+        const gameTitle = meta?.game_title || 'a game';
+        switch (event.type) {
+            case 'review': return `${actorName} reviewed ${gameTitle}`;
+            case 'rating': return `${actorName} rated ${gameTitle}`;
+            case 'status_change': return `${actorName} marked ${gameTitle} as ${meta?.status || 'played'}`;
+            case 'list_add': return `${actorName} added ${gameTitle} to a list`;
+            case 'follow': return `${actorName} followed someone`;
+        }
+    };
+
+    return (
+        <View style={[styles.activityTile, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+            <View style={[styles.activityBadge, { backgroundColor: `${accentByType[event.type]}18` }]}>
+                <Ionicons name={iconByType[event.type]} size={16} color={accentByType[event.type]} />
+            </View>
+            <View style={{ flex: 1 }}>
+                <Text style={[styles.activityText, { color: theme.colors.text.primary }]}>{labelByType()}</Text>
+                <Text style={[styles.activityMeta, { color: theme.colors.text.secondary }]}>
+                    {new Date(event.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+            </View>
+        </View>
+    );
+}
+
 export default function DiscoverScreen() {
     const { user } = useAuthStore();
     const router = useRouter();
-    const [refreshing, setRefreshing] = useState(false);
+    const { theme } = useAppTheme();
 
-    // Load trending games
-    const { data: trending = [], isLoading: trendingLoading } = useQuery<GameSearchResult[]>({
+    const { data: trending = [] } = useQuery<GameSearchResult[]>({
         queryKey: ['trending-games'],
         queryFn: async () => {
-            const { results } = await gamesApi.search('', 1);
-            return results.slice(0, 10);
+            const { results } = await gamesApi.search('zelda', 1).catch(() => ({ results: [] }));
+            if (results.length > 0) return results.slice(0, 8);
+            const browse = await gamesApi.browse({ sort: 'rating', sortOrder: 'desc', limit: 8 });
+            return browse.results;
         },
         staleTime: 1000 * 60 * 30,
     });
 
-    // Load activity feed
-    const { data: feed = [], isLoading: feedLoading, refetch: refetchFeed } = useQuery<ActivityEvent[]>({
+    const { data: feed = [] } = useQuery<ActivityEvent[]>({
         queryKey: ['activity-feed', user?.id],
         queryFn: async () => {
             if (!user) return [];
@@ -370,40 +105,34 @@ export default function DiscoverScreen() {
                         .from('activity_events')
                         .select('*, actor:profiles(id, display_name, avatar_url)')
                         .order('created_at', { ascending: false })
-                        .limit(20),
+                        .limit(8),
                     8_000,
-                    'Load friend activity'
+                    'Load activity'
                 );
-                if (error) {
-                    console.warn('[Discover] activity feed error:', error.message);
-                    return [];
-                }
-                return (data ?? []).map((e) => ({
-                    id: e.id,
-                    actorId: e.actor_id,
-                    type: e.type as ActivityType,
-                    entityId: e.entity_id,
-                    metadata: e.metadata,
-                    createdAt: e.created_at,
-                    actor: e.actor ? {
-                        id: e.actor.id,
-                        displayName: e.actor.display_name,
-                        avatarUrl: e.actor.avatar_url,
+                if (error) return [];
+                return (data ?? []).map((event: any) => ({
+                    id: event.id,
+                    actorId: event.actor_id,
+                    type: event.type,
+                    entityId: event.entity_id,
+                    metadata: event.metadata,
+                    createdAt: event.created_at,
+                    actor: event.actor ? {
+                        id: event.actor.id,
+                        displayName: event.actor.display_name,
+                        avatarUrl: event.actor.avatar_url,
                     } : undefined,
                 }));
-            } catch (err: any) {
-                console.warn('[Discover] activity feed exception:', err.message);
+            } catch {
                 return [];
             }
         },
         enabled: !!user,
-        refetchInterval: 30_000,
-        retry: 0,
+        staleTime: 1000 * 30,
     });
 
-    // Load recommendations
     const { data: recommendations = [] } = useQuery({
-        queryKey: ['recommendations', user?.id],
+        queryKey: ['discover-recommendations', user?.id],
         queryFn: async () => {
             if (!user) return [];
             const [{ data: reviews }, { data: statuses }] = await Promise.all([
@@ -411,38 +140,44 @@ export default function DiscoverScreen() {
                 supabase.from('user_game_status').select('*, game:games(*)').eq('user_id', user.id),
             ]);
 
-            const mappedReviews = (reviews ?? []).map((r) => ({
-                id: r.id, userId: r.user_id, gameId: r.game_id,
-                rating: Number(r.rating), reviewText: r.review_text,
-                spoiler: r.spoiler, createdAt: r.created_at, updatedAt: r.updated_at,
-                game: r.game ? {
-                    providerId: r.game.provider_game_id,
+            const mappedReviews = (reviews ?? []).map((review: any) => ({
+                id: review.id,
+                userId: review.user_id,
+                gameId: review.game_id,
+                rating: Number(review.rating),
+                reviewText: review.review_text,
+                spoiler: review.spoiler,
+                createdAt: review.created_at,
+                updatedAt: review.updated_at,
+                game: review.game ? {
+                    providerId: review.game.provider_game_id,
                     provider: 'igdb' as const,
-                    title: r.game.title,
-                    genres: r.game.genres ?? [],
-                    platforms: r.game.platforms ?? [],
-                    rating: r.game.rating
+                    title: review.game.title,
+                    genres: review.game.genres ?? [],
+                    platforms: review.game.platforms ?? [],
+                    rating: review.game.rating,
                 } : undefined,
             }));
 
-            const mappedStatuses = (statuses ?? []).map((s) => ({
-                userId: s.user_id, gameId: s.game_id, status: s.status,
-                addedAt: s.added_at, lastUpdated: s.last_updated,
-                game: s.game ? {
-                    providerId: s.game.provider_game_id,
+            const mappedStatuses = (statuses ?? []).map((status: any) => ({
+                userId: status.user_id,
+                gameId: status.game_id,
+                status: status.status,
+                addedAt: status.added_at,
+                lastUpdated: status.last_updated,
+                game: status.game ? {
+                    providerId: status.game.provider_game_id,
                     provider: 'igdb' as const,
-                    title: s.game.title,
-                    genres: s.game.genres ?? [],
-                    platforms: s.game.platforms ?? [],
-                    rating: s.game.rating
+                    title: status.game.title,
+                    genres: status.game.genres ?? [],
+                    platforms: status.game.platforms ?? [],
+                    rating: status.game.rating,
                 } : undefined,
             }));
 
             if (mappedReviews.length === 0 && mappedStatuses.length === 0) return [];
 
             const vector = buildPreferenceVector(mappedReviews as any, mappedStatuses as any);
-
-            // Get top 3 genres and convert to IGDB IDs
             const topGenreIds = Object.entries(vector.genres)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 3)
@@ -451,474 +186,286 @@ export default function DiscoverScreen() {
 
             if (topGenreIds.length === 0) return [];
 
-            // Get IGDB provider IDs (not database UUIDs) for exclusion
             const playedProviderIds = new Set([
-                ...mappedReviews.filter(r => r.game?.providerId).map((r) => r.game!.providerId),
-                ...mappedStatuses.filter(s => s.game?.providerId).map((s) => s.game!.providerId),
+                ...mappedReviews.filter((review) => review.game?.providerId).map((review) => review.game!.providerId),
+                ...mappedStatuses.filter((status) => status.game?.providerId).map((status) => status.game!.providerId),
             ]);
 
-            // Use browse API with genre filters, with fallback to text search if it fails
-            try {
-                const { results: candidates } = await gamesApi.browse({
-                    genres: topGenreIds,
-                    minRating: 70, // Quality threshold
-                    sort: 'rating',
-                    sortOrder: 'desc',
-                    excludeIds: Array.from(playedProviderIds),
-                    limit: 30,
-                });
+            const { results: candidates } = await gamesApi.browse({
+                genres: topGenreIds,
+                minRating: 72,
+                sort: 'rating',
+                sortOrder: 'desc',
+                excludeIds: Array.from(playedProviderIds),
+                limit: 20,
+            });
 
-                return recommend(candidates, mappedReviews as any, mappedStatuses as any, 5);
-            } catch (error) {
-                console.error('[recommendations] Browse API failed, falling back to text search:', error);
-                // Fallback to the old text search method if browse fails
-                const topGenre = Object.entries(vector.genres).sort((a, b) => b[1] - a[1])[0]?.[0];
-                if (!topGenre) return [];
-
-                const { results: candidates } = await gamesApi.search(topGenre, 1);
-                const unseenCandidates = candidates.filter((c) => !playedProviderIds.has(c.providerId));
-
-                return recommend(unseenCandidates, mappedReviews as any, mappedStatuses as any, 5);
-            }
+            return recommend(candidates, mappedReviews as any, mappedStatuses as any, 4);
         },
         enabled: !!user,
         staleTime: 1000 * 60 * 10,
-        retry: 1,
-        retryDelay: 2000,
     });
 
-    const onRefresh = async () => {
-        setRefreshing(true);
-        await refetchFeed();
-        setRefreshing(false);
-    };
+    const featured = trending[0];
+    const heroAccent = theme.colors.hero.primary;
 
     return (
-        <SafeAreaView style={styles.container}>
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        tintColor={colors.neon.cyan}
-                        colors={[colors.neon.cyan]}
-                    />
-                }
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={styles.title}>Discover</Text>
-                    <Text style={styles.subtitle}>Find your next favorite game</Text>
-                </View>
-
-                {/* Trending Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="trending-up" size={20} color={colors.neon.cyan} />
-                        <Text style={styles.sectionTitle}>Trending</Text>
+        <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+            <ThemeBackdrop />
+            <SafeAreaView style={styles.safeArea}>
+                <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+                    <View style={styles.topRow}>
+                        <View>
+                            <Text style={[styles.kicker, { color: theme.colors.neon.orange }]}>Player One</Text>
+                            <Text style={[styles.headline, { color: theme.colors.text.primary }]}>Discover</Text>
+                            <Text style={[styles.copy, { color: theme.colors.text.secondary }]}>
+                                Curated shelves, social activity, and recommendation cards that feel closer to a launcher than a list.
+                            </Text>
+                        </View>
+                        <ThemeModeToggle compact />
                     </View>
-                    <Text style={styles.sectionSubtitle}>Popular this week</Text>
 
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.trendingScroll}
-                        decelerationRate="fast"
-                        snapToInterval={CARD_WIDTH + spacing.md}
-                    >
-                        {trendingLoading ? (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator color={colors.neon.cyan} />
+                    {featured && (
+                        <TouchableOpacity activeOpacity={0.94} onPress={() => router.push(`/game/${featured.providerId}`)}>
+                            <LinearGradient
+                                colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.tertiary]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.heroPanel}
+                            >
+                                <Text style={styles.heroLabel}>Featured Tonight</Text>
+                                <Text style={styles.heroTitle}>{featured.title}</Text>
+                                <Text style={styles.heroBlurb}>
+                                    Jump into a standout pick from the current catalog and inspect its details, cast, and community context.
+                                </Text>
+                                <View style={styles.heroMetaRow}>
+                                    <View style={styles.heroMetaPill}>
+                                        <Ionicons name="sparkles" size={12} color={theme.colors.white} />
+                                        <Text style={styles.heroMetaText}>Trending</Text>
+                                    </View>
+                                    {featured.releaseDate && (
+                                        <View style={styles.heroMetaPill}>
+                                            <Ionicons name="calendar-outline" size={12} color={theme.colors.white} />
+                                            <Text style={styles.heroMetaText}>{new Date(featured.releaseDate).getFullYear()}</Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    )}
+
+                    <SectionHeader
+                        icon="flame"
+                        title="Trending Shelf"
+                        subtitle="Fast, glossy picks from the live catalog"
+                        accent={heroAccent}
+                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroCarousel}>
+                        {trending.map((game) => (
+                            <GameHeroCard key={game.providerId} game={game} onPress={() => router.push(`/game/${game.providerId}`)} />
+                        ))}
+                    </ScrollView>
+
+                    {recommendations.length > 0 && (
+                        <>
+                            <SectionHeader
+                                icon="sparkles"
+                                title="Made For Your Taste"
+                                subtitle="Recommendations weighted from your ratings and status history"
+                                accent={theme.colors.hero.secondary}
+                            />
+                            <View style={styles.stack}>
+                                {recommendations.map((recommendation) => (
+                                    <GameCard
+                                        key={recommendation.game.providerId}
+                                        game={{ ...recommendation.game, matchLabel: recommendation.reason }}
+                                        onPress={() => router.push(`/game/${recommendation.game.providerId}`)}
+                                    />
+                                ))}
+                            </View>
+                        </>
+                    )}
+
+                    <SectionHeader
+                        icon="people"
+                        title="Friend Activity"
+                        subtitle="A live pulse of reviews, ratings, and status changes"
+                        accent={theme.colors.hero.quaternary}
+                    />
+                    <View style={styles.stack}>
+                        {feed.length === 0 ? (
+                            <View style={[styles.emptyState, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+                                <Ionicons name="people-outline" size={28} color={theme.colors.text.muted} />
+                                <Text style={[styles.emptyTitle, { color: theme.colors.text.primary }]}>No activity yet</Text>
+                                <Text style={[styles.emptyCopy, { color: theme.colors.text.secondary }]}>
+                                    Once you and your friends start logging games, the feed will animate with ratings and reviews here.
+                                </Text>
                             </View>
                         ) : (
-                            trending.map((game, index) => (
-                                <TrendingGamePoster
-                                    key={game.providerId}
-                                    game={game}
-                                    onPress={() => router.push(`/game/${game.providerId}`)}
-                                />
-                            ))
+                            feed.map((event) => <ActivityTile key={event.id} event={event} />)
                         )}
-                    </ScrollView>
-                </View>
-
-                {/* Recommendations Section */}
-                {recommendations.length > 0 && (
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Ionicons name="sparkles" size={20} color={colors.neon.pink} />
-                            <Text style={styles.sectionTitle}>Recommended For You</Text>
-                        </View>
-                        <Text style={styles.sectionSubtitle}>Based on your gaming taste</Text>
-
-                        {recommendations.map((rec) => (
-                            <RecommendationCard
-                                key={rec.game.providerId}
-                                recommendation={rec}
-                                onPress={() => router.push(`/game/${rec.game.providerId}`)}
-                            />
-                        ))}
                     </View>
-                )}
-
-                {/* Activity Feed Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="people" size={20} color={colors.neon.lime} />
-                        <Text style={styles.sectionTitle}>Friend Activity</Text>
-                    </View>
-
-                    {feedLoading ? (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator color={colors.neon.cyan} />
-                        </View>
-                    ) : feed.length === 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <View style={styles.emptyIcon}>
-                                <Ionicons name="people-outline" size={48} color={colors.text.muted} />
-                            </View>
-                            <Text style={styles.emptyTitle}>No activity yet</Text>
-                            <Text style={styles.emptySubtitle}>Follow friends to see their gaming activity here</Text>
-                        </View>
-                    ) : (
-                        feed.map((event) => <ActivityEventCard key={event.id} event={event} />)
-                    )}
-                </View>
-            </ScrollView>
-        </SafeAreaView>
+                </ScrollView>
+            </SafeAreaView>
+        </View>
     );
 }
 
-// ===== STYLES =====
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.bg.primary,
+    container: { flex: 1 },
+    safeArea: { flex: 1 },
+    scroll: {
+        paddingHorizontal: 20,
+        paddingBottom: 120,
+        gap: 18,
     },
-    scrollContent: {
-        paddingBottom: spacing['2xl'],
+    topRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 6,
     },
-    header: {
-        paddingHorizontal: spacing.lg,
-        paddingTop: spacing.lg,
-        marginBottom: spacing.base,
-    },
-    title: {
-        fontSize: typography.size['3xl'],
+    kicker: {
+        fontSize: 12,
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
-        letterSpacing: -1,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+        marginBottom: 6,
     },
-    subtitle: {
-        fontSize: typography.size.base,
+    headline: {
+        fontSize: 34,
+        lineHeight: 38,
+        fontFamily: 'Inter_700Bold',
+        letterSpacing: -1.3,
+    },
+    copy: {
+        marginTop: 8,
+        maxWidth: 300,
+        fontSize: 14,
+        lineHeight: 22,
         fontFamily: 'Inter_400Regular',
-        color: colors.neon.cyan,
-        marginTop: spacing.xs,
     },
-
-    // Sections
-    section: {
-        marginBottom: spacing.xl,
+    heroPanel: {
+        borderRadius: 30,
+        padding: 24,
+        marginBottom: 20,
+    },
+    heroLabel: {
+        color: '#ffffff',
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+        marginBottom: 10,
+    },
+    heroTitle: {
+        color: '#ffffff',
+        fontSize: 30,
+        lineHeight: 34,
+        fontFamily: 'Inter_700Bold',
+        maxWidth: 280,
+    },
+    heroBlurb: {
+        marginTop: 10,
+        color: 'rgba(255,255,255,0.82)',
+        fontSize: 14,
+        lineHeight: 21,
+        fontFamily: 'Inter_400Regular',
+        maxWidth: 320,
+    },
+    heroMetaRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+        marginTop: 18,
+    },
+    heroMetaPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        backgroundColor: 'rgba(255,255,255,0.16)',
+    },
+    heroMetaText: {
+        color: '#ffffff',
+        fontSize: 12,
+        fontFamily: 'Inter_600SemiBold',
     },
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.sm,
-        paddingHorizontal: spacing.lg,
-        marginBottom: spacing.xs,
+        gap: 12,
+        marginBottom: 12,
+    },
+    sectionIcon: {
+        width: 34,
+        height: 34,
+        borderRadius: 12,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     sectionTitle: {
-        fontSize: typography.size.lg,
+        fontSize: 19,
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
     },
     sectionSubtitle: {
-        fontSize: typography.size.xs,
+        marginTop: 2,
+        fontSize: 12,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-        paddingHorizontal: spacing.lg,
-        marginBottom: spacing.md,
-        textTransform: 'uppercase',
-        letterSpacing: 1.5,
     },
-
-    // Trending
-    trendingScroll: {
-        paddingHorizontal: spacing.lg,
-        gap: spacing.md,
+    heroCarousel: {
+        gap: 14,
+        paddingBottom: 8,
+        marginBottom: 12,
     },
-    posterContainer: {
-        width: CARD_WIDTH,
+    stack: {
+        gap: 12,
+        marginBottom: 12,
     },
-    poster: {
-        borderRadius: radius.lg,
-        overflow: 'hidden',
-        backgroundColor: colors.bg.card,
+    activityTile: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: 24,
         borderWidth: 1,
-        borderColor: colors.border,
+        padding: 16,
     },
-    coverWrapper: {
-        height: 180,
-        position: 'relative',
-    },
-    coverGlow: {
-        ...StyleSheet.absoluteFillObject,
-        borderRadius: radius.lg,
-        backgroundColor: colors.neon.cyan,
-        opacity: 0.08,
-        transform: [{ scale: 1.05 }],
-    },
-    cover: {
-        width: '100%',
-        height: '100%',
-        borderRadius: radius.lg,
-    },
-    coverPlaceholder: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: colors.bg.tertiary,
+    activityBadge: {
+        width: 40,
+        height: 40,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    gradientOverlay: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 80,
-    },
-    posterInfo: {
-        padding: spacing.md,
-        gap: spacing.xs,
-    },
-    posterTitle: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+    activityText: {
+        fontSize: 14,
         lineHeight: 20,
-    },
-    posterMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.sm,
-    },
-    posterYear: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
-    },
-    posterRating: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    posterRatingValue: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.star,
-    },
-    genreChips: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: spacing.xs,
-        marginTop: spacing.xs,
-    },
-    genreChip: {
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 2,
-        borderRadius: radius.full,
-    },
-    genreChipText: {
-        fontSize: typography.size['2xs'],
         fontFamily: 'Inter_500Medium',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
     },
-
-    // Shimmer
-    shimmer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        opacity: 0.6,
+    activityMeta: {
+        marginTop: 4,
+        fontSize: 12,
+        fontFamily: 'Inter_400Regular',
     },
-
-    // Recommendations
-    recommendContainer: {
-        paddingHorizontal: spacing.lg,
-    },
-    recommendCard: {
-        flexDirection: 'row',
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.lg,
+    emptyState: {
+        borderRadius: 26,
         borderWidth: 1,
-        borderColor: colors.border,
-        marginBottom: spacing.md,
-        overflow: 'hidden',
-    },
-    recommendCoverWrapper: {
-        position: 'relative',
-        margin: spacing.md,
-    },
-    recommendGlow: {
-        ...StyleSheet.absoluteFillObject,
-        borderRadius: radius.md,
-        backgroundColor: colors.neon.purple,
-        opacity: 0.1,
-        transform: [{ scale: 1.08 }],
-    },
-    recommendCover: {
-        width: 80,
-        height: 110,
-        borderRadius: radius.md,
-    },
-    recommendCoverPlaceholder: {
-        width: 80,
-        height: 110,
-        borderRadius: radius.md,
-        backgroundColor: colors.bg.tertiary,
+        padding: 24,
         alignItems: 'center',
-        justifyContent: 'center',
-    },
-    recommendInfo: {
-        flex: 1,
-        paddingVertical: spacing.md,
-        paddingRight: spacing.md,
-        justifyContent: 'center',
-        gap: spacing.xs,
-    },
-    recommendTitle: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
-    },
-    recommendMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.sm,
-    },
-    recommendYear: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
-    },
-    recommendRating: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    recommendRatingValue: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.star,
-    },
-    reasonContainer: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: spacing.xs,
-        marginTop: spacing.xs,
-    },
-    reasonText: {
-        flex: 1,
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.neon.cyan,
-        fontStyle: 'italic',
-    },
-    recommendChevron: {
-        position: 'absolute',
-        right: spacing.md,
-        top: '50%',
-        marginTop: -9,
-    },
-
-    // Activity
-    eventCard: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: spacing.md,
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.lg,
-        borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.md,
-        marginHorizontal: spacing.lg,
-        marginBottom: spacing.sm,
-    },
-    eventAvatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: colors.bg.tertiary,
-        overflow: 'hidden',
-    },
-    avatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-    },
-    avatarPlaceholder: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    eventContent: {
-        flex: 1,
-        gap: 4,
-    },
-    eventIconRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: spacing.xs,
-    },
-    eventLabel: {
-        flex: 1,
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.primary,
-        lineHeight: 18,
-    },
-    eventTime: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-    },
-    eventCover: {
-        width: 36,
-        height: 50,
-        borderRadius: radius.sm,
-    },
-
-    // Empty states
-    loadingContainer: {
-        paddingVertical: spacing.xl,
-        alignItems: 'center',
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        paddingVertical: spacing['2xl'],
-        marginHorizontal: spacing.lg,
-    },
-    emptyIcon: {
-        marginBottom: spacing.md,
-        padding: spacing.lg,
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.full,
     },
     emptyTitle: {
-        fontSize: typography.size.lg,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
-        marginBottom: spacing.xs,
+        marginTop: 12,
+        fontSize: 18,
+        fontFamily: 'Inter_700Bold',
     },
-    emptySubtitle: {
-        fontSize: typography.size.base,
+    emptyCopy: {
+        marginTop: 6,
+        fontSize: 13,
+        lineHeight: 20,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
         textAlign: 'center',
     },
 });

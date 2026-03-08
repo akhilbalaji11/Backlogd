@@ -6,11 +6,11 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ThemeProvider, useAppTheme } from '../src/theme/appTheme';
 import { profilesRepo } from '../src/lib/profilesRepo';
 import { supabase } from '../src/lib/supabase';
 import { useAuthStore } from '../src/stores/authStore';
 import '../src/styles/global.css';
-import { colors } from '../src/styles/tokens';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -24,7 +24,16 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+    return (
+        <ThemeProvider>
+            <RootShell />
+        </ThemeProvider>
+    );
+}
+
+function RootShell() {
     const { setSession, setProfile } = useAuthStore();
+    const { theme } = useAppTheme();
 
     const [fontsLoaded] = useFonts({
         Inter_400Regular,
@@ -84,8 +93,8 @@ export default function RootLayout() {
         <GestureHandlerRootView style={{ flex: 1 }}>
             <SafeAreaProvider>
                 <QueryClientProvider client={queryClient}>
-                    <StatusBar style="light" />
-                    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg.primary } }}>
+                    <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+                    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg.primary } }}>
                         <Stack.Screen name="(auth)" />
                         <Stack.Screen name="(tabs)" />
                         <Stack.Screen

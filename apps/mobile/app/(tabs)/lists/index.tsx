@@ -1,14 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     Animated,
     FlatList,
     Modal,
-    Platform,
     StyleSheet,
     Switch,
     Text,
@@ -17,74 +16,58 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 
+import { ThemeBackdrop } from '../../../src/components/ui/ThemeBackdrop';
+import { ThemeModeToggle } from '../../../src/components/ui/ThemeModeToggle';
 import type { GameList } from '../../../src/domain/types';
 import { supabase } from '../../../src/lib/supabase';
 import { withTimeout } from '../../../src/lib/withTimeout';
 import { useAuthStore } from '../../../src/stores/authStore';
-import { colors, radius, spacing, typography } from '../../../src/styles/tokens';
+import { useAppTheme } from '../../../src/theme/appTheme';
 
-// List card with glow effect
-function ListCard({ list, onPress }: { list: GameList; onPress?: () => void }) {
+function ListCard({ list }: { list: GameList }) {
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const scaleAnim = useRef(new Animated.Value(1)).current;
-
-    const handlePressIn = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 0.97,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    const handlePressOut = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
 
     return (
         <TouchableOpacity
-            style={styles.listCardContainer}
-            onPress={onPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.9}
+            activeOpacity={0.92}
+            onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.985, useNativeDriver: true, friction: 8 }).start()}
+            onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, friction: 8 }).start()}
         >
             <Animated.View style={[styles.listCard, { transform: [{ scale: scaleAnim }] }]}>
-                {/* Gradient accent */}
-                <View style={styles.listCardAccent} />
-
-                {/* Content */}
-                <View style={styles.listCardContent}>
-                    <View style={styles.listCardHeader}>
-                        <View style={styles.listIconContainer}>
-                            <Ionicons name="list" size={20} color={colors.neon.cyan} />
-                        </View>
-                        <View style={styles.listCardInfo}>
-                            <Text style={styles.listTitle} numberOfLines={1}>{list.title}</Text>
-                            {list.description && (
-                                <Text style={styles.listDesc} numberOfLines={1}>{list.description}</Text>
-                            )}
-                        </View>
+                <LinearGradient
+                    colors={[`${theme.colors.hero.primary}26`, `${theme.colors.hero.secondary}14`, 'transparent']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.listCardHeader}>
+                    <View style={styles.listIconWrap}>
+                        <Ionicons name="albums" size={18} color={theme.colors.hero.primary} />
                     </View>
-
-                    <View style={styles.listCardFooter}>
-                        <View style={styles.listMeta}>
-                            <Ionicons name="game-controller" size={12} color={colors.text.muted} />
-                            <Text style={styles.listMetaText}>{list.itemCount ?? 0} games</Text>
-                        </View>
-
-                        {!list.isPublic && (
-                            <View style={styles.privateBadge}>
-                                <Ionicons name="lock-closed" size={10} color={colors.text.muted} />
-                                <Text style={styles.privateText}>Private</Text>
-                            </View>
-                        )}
-
-                        <Ionicons name="chevron-forward" size={16} color={colors.text.muted} />
+                    <View style={styles.listCardInfo}>
+                        <Text style={styles.listTitle} numberOfLines={1}>{list.title}</Text>
+                        <Text style={styles.listDescription} numberOfLines={2}>
+                            {list.description || 'A curated shelf waiting for more games.'}
+                        </Text>
+                    </View>
+                </View>
+                <View style={styles.listMetaRow}>
+                    <View style={styles.metaPill}>
+                        <Ionicons name="game-controller" size={12} color={theme.colors.text.secondary} />
+                        <Text style={styles.metaText}>{list.itemCount ?? 0} games</Text>
+                    </View>
+                    <View style={list.isPublic ? styles.publicPill : styles.privatePill}>
+                        <Ionicons
+                            name={list.isPublic ? 'globe-outline' : 'lock-closed-outline'}
+                            size={12}
+                            color={list.isPublic ? theme.colors.hero.quaternary : theme.colors.text.secondary}
+                        />
+                        <Text style={list.isPublic ? styles.publicText : styles.privateText}>
+                            {list.isPublic ? 'Public' : 'Private'}
+                        </Text>
                     </View>
                 </View>
             </Animated.View>
@@ -95,7 +78,8 @@ function ListCard({ list, onPress }: { list: GameList; onPress?: () => void }) {
 export default function ListsScreen() {
     const { user } = useAuthStore();
     const qc = useQueryClient();
-    const router = useRouter();
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const [showCreate, setShowCreate] = useState(false);
     const [newTitle, setNewTitle] = useState('');
     const [newDesc, setNewDesc] = useState('');
@@ -115,15 +99,15 @@ export default function ListsScreen() {
                 'Load lists'
             );
             if (error) throw error;
-            return (data ?? []).map((l) => ({
-                id: l.id,
-                userId: l.user_id,
-                title: l.title,
-                description: l.description,
-                isPublic: l.is_public,
-                createdAt: l.created_at,
-                updatedAt: l.updated_at,
-                itemCount: Array.isArray(l.item_count) ? l.item_count[0]?.count ?? 0 : 0,
+            return (data ?? []).map((list) => ({
+                id: list.id,
+                userId: list.user_id,
+                title: list.title,
+                description: list.description,
+                isPublic: list.is_public,
+                createdAt: list.created_at,
+                updatedAt: list.updated_at,
+                itemCount: Array.isArray(list.item_count) ? list.item_count[0]?.count ?? 0 : 0,
             }));
         },
         enabled: !!user,
@@ -150,358 +134,457 @@ export default function ListsScreen() {
             setShowCreate(false);
             setNewTitle('');
             setNewDesc('');
+            setIsPublic(true);
         },
-        onError: (e: Error) => Alert.alert('Error', e.message),
+        onError: (error: Error) => Alert.alert('Error', error.message),
     });
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <View>
-                    <Text style={styles.title}>Lists</Text>
-                    <Text style={styles.subtitle}>Curate your collections</Text>
-                </View>
-                <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreate(true)}>
-                    <Ionicons name="add" size={24} color={colors.bg.primary} />
-                </TouchableOpacity>
-            </View>
-
-            {/* Content */}
-            {isLoading ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.neon.cyan} />
-                </View>
-            ) : lists.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                    <View style={styles.emptyIcon}>
-                        <Ionicons name="list-outline" size={48} color={colors.text.muted} />
+        <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+            <ThemeBackdrop />
+            <SafeAreaView style={styles.safeArea}>
+                <View style={styles.header}>
+                    <View style={styles.headerText}>
+                        <Text style={styles.kicker}>Curated Shelves</Text>
+                        <Text style={styles.title}>Lists</Text>
+                        <Text style={styles.subtitle}>Build colorful collections instead of dumping everything into one backlog.</Text>
                     </View>
-                    <Text style={styles.emptyTitle}>No lists yet</Text>
-                    <Text style={styles.emptySubtitle}>Create curated collections like "Best Indie Games" or "Co-op Favorites"</Text>
-                    <TouchableOpacity style={styles.emptyButton} onPress={() => setShowCreate(true)}>
-                        <Ionicons name="add" size={18} color={colors.bg.primary} />
-                        <Text style={styles.emptyButtonText}>Create a List</Text>
+                    <ThemeModeToggle compact />
+                </View>
+
+                <LinearGradient
+                    colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.quaternary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.heroCard}
+                >
+                    <View>
+                        <Text style={styles.heroLabel}>Collection Studio</Text>
+                        <Text style={styles.heroNumber}>{lists.length}</Text>
+                        <Text style={styles.heroCopy}>active lists in your library</Text>
+                    </View>
+                    <TouchableOpacity style={styles.heroButton} onPress={() => setShowCreate(true)} activeOpacity={0.9}>
+                        <Ionicons name="add" size={18} color={theme.colors.text.primary} />
+                        <Text style={styles.heroButtonText}>New List</Text>
                     </TouchableOpacity>
-                </View>
-            ) : (
-                <FlatList
-                    data={lists}
-                    keyExtractor={(l) => l.id}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item }) => (
-                        <ListCard list={item} />
-                    )}
-                    showsVerticalScrollIndicator={false}
-                />
-            )}
+                </LinearGradient>
 
-            {/* Create Modal */}
-            <Modal visible={showCreate} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCreate(false)}>
-                <SafeAreaView style={styles.modal}>
-                    <View style={styles.modalHeader}>
-                        <TouchableOpacity onPress={() => setShowCreate(false)}>
-                            <Text style={styles.cancelBtn}>Cancel</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.modalTitle}>New List</Text>
-                        <TouchableOpacity
-                            onPress={() => createMutation.mutate()}
-                            disabled={createMutation.isPending || !newTitle.trim()}
-                        >
-                            <Text style={[
-                                styles.saveBtn,
-                                (createMutation.isPending || !newTitle.trim()) && { opacity: 0.4 },
-                            ]}>
-                                {createMutation.isPending ? 'Creating…' : 'Create'}
-                            </Text>
+                {isLoading ? (
+                    <View style={styles.centerState}>
+                        <ActivityIndicator size="large" color={theme.colors.hero.primary} />
+                    </View>
+                ) : lists.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                        <Ionicons name="layers-outline" size={30} color={theme.colors.text.muted} />
+                        <Text style={styles.emptyTitle}>No lists yet</Text>
+                        <Text style={styles.emptyCopy}>
+                            Start with a mood board like "Best handheld comfort games" or "Brutal bosses worth replaying."
+                        </Text>
+                        <TouchableOpacity style={styles.emptyButton} onPress={() => setShowCreate(true)} activeOpacity={0.88}>
+                            <Text style={styles.emptyButtonText}>Create your first list</Text>
                         </TouchableOpacity>
                     </View>
+                ) : (
+                    <FlatList
+                        data={lists}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => <ListCard list={item} />}
+                        contentContainerStyle={styles.listContent}
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
 
-                    <View style={styles.modalBody}>
-                        <Text style={styles.fieldLabel}>Title *</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="e.g., Best RPGs of 2024"
-                            placeholderTextColor={colors.text.muted}
-                            value={newTitle}
-                            onChangeText={setNewTitle}
-                            selectionColor={colors.neon.cyan}
-                            autoFocus
-                        />
-
-                        <Text style={styles.fieldLabel}>Description</Text>
-                        <TextInput
-                            style={[styles.input, styles.textArea]}
-                            placeholder="What's this list about?"
-                            placeholderTextColor={colors.text.muted}
-                            value={newDesc}
-                            onChangeText={setNewDesc}
-                            multiline
-                            textAlignVertical="top"
-                            selectionColor={colors.neon.cyan}
-                        />
-
-                        <View style={styles.toggleRow}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.toggleLabel}>Public list</Text>
-                                <Text style={styles.toggleDescription}>Others can discover and follow this list</Text>
-                            </View>
-                            <Switch
-                                value={isPublic}
-                                onValueChange={setIsPublic}
-                                trackColor={{ false: colors.border, true: colors.neon.cyan }}
-                                thumbColor={colors.white}
-                            />
+                <Modal visible={showCreate} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCreate(false)}>
+                    <SafeAreaView style={[styles.modal, { backgroundColor: theme.colors.bg.primary }]}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={() => setShowCreate(false)}>
+                                <Text style={styles.modalAction}>Cancel</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.modalTitle}>New List</Text>
+                            <TouchableOpacity onPress={() => createMutation.mutate()} disabled={createMutation.isPending || !newTitle.trim()}>
+                                <Text style={[styles.modalActionStrong, (createMutation.isPending || !newTitle.trim()) && styles.disabledText]}>
+                                    {createMutation.isPending ? 'Creating...' : 'Create'}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
-                    </View>
-                </SafeAreaView>
-            </Modal>
-        </SafeAreaView>
+
+                        <View style={styles.modalBody}>
+                            <LinearGradient
+                                colors={[`${theme.colors.hero.primary}24`, `${theme.colors.hero.secondary}18`]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.modalHero}
+                            >
+                                <Text style={styles.modalHeroTitle}>Design the shelf</Text>
+                                <Text style={styles.modalHeroCopy}>Give the list a strong name and a short angle so people know what makes it worth opening.</Text>
+                            </LinearGradient>
+
+                            <View style={styles.fieldBlock}>
+                                <Text style={styles.fieldLabel}>Title</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Best RPGs for long weekends"
+                                    placeholderTextColor={theme.colors.text.muted}
+                                    value={newTitle}
+                                    onChangeText={setNewTitle}
+                                    selectionColor={theme.colors.hero.primary}
+                                    autoFocus
+                                />
+                            </View>
+
+                            <View style={styles.fieldBlock}>
+                                <Text style={styles.fieldLabel}>Description</Text>
+                                <TextInput
+                                    style={styles.textArea}
+                                    placeholder="What is this collection trying to capture?"
+                                    placeholderTextColor={theme.colors.text.muted}
+                                    value={newDesc}
+                                    onChangeText={setNewDesc}
+                                    multiline
+                                    textAlignVertical="top"
+                                    selectionColor={theme.colors.hero.primary}
+                                />
+                            </View>
+
+                            <View style={styles.toggleRow}>
+                                <View style={styles.toggleTextWrap}>
+                                    <Text style={styles.toggleTitle}>Public list</Text>
+                                    <Text style={styles.toggleCopy}>Allow other players to discover and follow this shelf.</Text>
+                                </View>
+                                <Switch
+                                    value={isPublic}
+                                    onValueChange={setIsPublic}
+                                    trackColor={{ false: theme.colors.border, true: theme.colors.hero.primary }}
+                                    thumbColor={theme.colors.white}
+                                />
+                            </View>
+                        </View>
+                    </SafeAreaView>
+                </Modal>
+            </SafeAreaView>
+        </View>
     );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.bg.primary,
-    },
+const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSheet.create({
+    container: { flex: 1 },
+    safeArea: { flex: 1 },
     header: {
+        paddingHorizontal: 20,
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: spacing.lg,
-        paddingTop: spacing.lg,
-        paddingBottom: spacing.md,
+        alignItems: 'flex-start',
+        gap: 16,
+    },
+    headerText: {
+        flex: 1,
+    },
+    kicker: {
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.neon.orange,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     title: {
-        fontSize: typography.size['2xl'],
+        marginTop: 6,
+        fontSize: 34,
+        lineHeight: 38,
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
-        letterSpacing: -0.5,
+        color: theme.colors.text.primary,
     },
     subtitle: {
-        fontSize: typography.size.sm,
+        marginTop: 8,
+        fontSize: 14,
+        lineHeight: 22,
         fontFamily: 'Inter_400Regular',
-        color: colors.neon.cyan,
+        color: theme.colors.text.secondary,
+        maxWidth: 290,
+    },
+    heroCard: {
+        marginHorizontal: 20,
+        marginTop: 18,
+        borderRadius: 30,
+        padding: 24,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+    },
+    heroLabel: {
+        color: theme.colors.white,
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+    },
+    heroNumber: {
+        marginTop: 8,
+        color: theme.colors.white,
+        fontSize: 46,
+        lineHeight: 48,
+        fontFamily: 'Inter_700Bold',
+    },
+    heroCopy: {
         marginTop: 2,
+        color: 'rgba(255,255,255,0.82)',
+        fontSize: 14,
+        fontFamily: 'Inter_500Medium',
     },
-    addBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: colors.neon.cyan,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-
-    // Loading
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-
-    // Empty state
-    emptyContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: spacing.xl,
-    },
-    emptyIcon: {
-        marginBottom: spacing.lg,
-        padding: spacing.xl,
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.full,
-    },
-    emptyTitle: {
-        fontSize: typography.size.xl,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
-        marginBottom: spacing.sm,
-    },
-    emptySubtitle: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
-        textAlign: 'center',
-        marginBottom: spacing.lg,
-        maxWidth: 300,
-    },
-    emptyButton: {
+    heroButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.sm,
-        backgroundColor: colors.neon.cyan,
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md,
-        borderRadius: radius.full,
+        gap: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderRadius: 999,
+        backgroundColor: 'rgba(255,255,255,0.82)',
+    },
+    heroButtonText: {
+        fontSize: 13,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
+    },
+    centerState: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emptyCard: {
+        marginHorizontal: 20,
+        marginTop: 24,
+        borderRadius: 30,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
+        padding: 28,
+        alignItems: 'center',
+    },
+    emptyTitle: {
+        marginTop: 14,
+        fontSize: 21,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
+    },
+    emptyCopy: {
+        marginTop: 8,
+        fontSize: 14,
+        lineHeight: 22,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+        textAlign: 'center',
+    },
+    emptyButton: {
+        marginTop: 18,
+        borderRadius: 999,
+        backgroundColor: `${theme.colors.hero.primary}20`,
+        paddingHorizontal: 18,
+        paddingVertical: 12,
     },
     emptyButtonText: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.bg.primary,
+        fontSize: 13,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.hero.primary,
     },
-
-    // List content
     listContent: {
-        padding: spacing.lg,
-        paddingBottom: spacing['3xl'],
-    },
-    listCardContainer: {
-        marginBottom: spacing.md,
+        paddingHorizontal: 20,
+        paddingTop: 18,
+        paddingBottom: 130,
+        gap: 12,
     },
     listCard: {
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.xl,
+        borderRadius: 28,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
+        padding: 18,
         overflow: 'hidden',
-    },
-    listCardAccent: {
-        height: 3,
-        backgroundColor: colors.neon.cyan,
-    },
-    listCardContent: {
-        padding: spacing.lg,
     },
     listCardHeader: {
         flexDirection: 'row',
+        gap: 14,
         alignItems: 'flex-start',
-        gap: spacing.md,
-        marginBottom: spacing.md,
     },
-    listIconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: radius.md,
-        backgroundColor: colors.neon.cyan + '15',
+    listIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
+        backgroundColor: `${theme.colors.hero.primary}16`,
     },
     listCardInfo: {
         flex: 1,
-        gap: 4,
     },
     listTitle: {
-        fontSize: typography.size.lg,
+        fontSize: 18,
+        lineHeight: 22,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
+    },
+    listDescription: {
+        marginTop: 6,
+        fontSize: 13,
+        lineHeight: 20,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+    },
+    listMetaRow: {
+        marginTop: 16,
+        flexDirection: 'row',
+        gap: 10,
+        flexWrap: 'wrap',
+    },
+    metaPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        backgroundColor: theme.colors.bg.secondary,
+    },
+    metaText: {
+        fontSize: 12,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        color: theme.colors.text.secondary,
     },
-    listDesc: {
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
-    },
-    listCardFooter: {
+    publicPill: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.md,
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        backgroundColor: `${theme.colors.hero.quaternary}16`,
     },
-    listMeta: {
+    privatePill: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.xs,
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        backgroundColor: theme.colors.bg.secondary,
     },
-    listMetaText: {
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-    },
-    privateBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        backgroundColor: colors.bg.tertiary,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 4,
-        borderRadius: radius.full,
+    publicText: {
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.hero.quaternary,
     },
     privateText: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_500Medium',
-        color: colors.text.muted,
+        fontSize: 12,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.text.secondary,
     },
-
-    // Modal
     modal: {
         flex: 1,
-        backgroundColor: colors.bg.primary,
     },
     modalHeader: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.base,
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: theme.colors.border,
     },
-    cancelBtn: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+    modalAction: {
+        fontSize: 15,
+        fontFamily: 'Inter_500Medium',
+        color: theme.colors.text.secondary,
+    },
+    modalActionStrong: {
+        fontSize: 15,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.hero.primary,
+    },
+    disabledText: {
+        opacity: 0.45,
     },
     modalTitle: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
-    },
-    saveBtn: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.neon.cyan,
+        fontSize: 15,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
     },
     modalBody: {
-        padding: spacing.lg,
-        gap: spacing.md,
+        padding: 20,
+        gap: 18,
+    },
+    modalHero: {
+        borderRadius: 24,
+        padding: 18,
+    },
+    modalHeroTitle: {
+        fontSize: 20,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
+    },
+    modalHeroCopy: {
+        marginTop: 8,
+        fontSize: 13,
+        lineHeight: 20,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+    },
+    fieldBlock: {
+        gap: 10,
     },
     fieldLabel: {
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_500Medium',
-        color: colors.text.secondary,
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.8,
     },
     input: {
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.md,
-        borderWidth: 1.5,
-        borderColor: colors.border,
-        padding: spacing.md,
-        fontSize: typography.size.base,
+        minHeight: 56,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: theme.colors.borderLight,
+        backgroundColor: theme.colors.surface.glassStrong,
+        color: theme.colors.text.primary,
+        paddingHorizontal: 16,
+        fontSize: 15,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.primary,
     },
     textArea: {
-        minHeight: 100,
-        textAlignVertical: 'top',
+        minHeight: 128,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: theme.colors.borderLight,
+        backgroundColor: theme.colors.surface.glassStrong,
+        color: theme.colors.text.primary,
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 16,
+        fontSize: 15,
+        lineHeight: 22,
+        fontFamily: 'Inter_400Regular',
     },
     toggleRow: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.md,
+        alignItems: 'center',
+        gap: 14,
+        borderRadius: 22,
         borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.md,
-        marginTop: spacing.md,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
+        padding: 18,
     },
-    toggleLabel: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_500Medium',
-        color: colors.text.primary,
+    toggleTextWrap: {
+        flex: 1,
     },
-    toggleDescription: {
-        fontSize: typography.size.xs,
+    toggleTitle: {
+        fontSize: 16,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.text.primary,
+    },
+    toggleCopy: {
+        marginTop: 4,
+        fontSize: 13,
+        lineHeight: 20,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-        marginTop: 2,
+        color: theme.colors.text.secondary,
     },
 });

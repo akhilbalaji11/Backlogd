@@ -100,6 +100,7 @@ function Deploy-Function {
 
 $functionsRoot = Join-Path $PSScriptRoot "supabase\functions"
 Deploy-Function -Name "games-search" -MainFile (Join-Path $functionsRoot "games-search\index.ts")
+Deploy-Function -Name "games-browse" -MainFile (Join-Path $functionsRoot "games-browse\index.ts")
 Deploy-Function -Name "games-detail" -MainFile (Join-Path $functionsRoot "games-detail\index.ts")
 Deploy-Function -Name "ai-tag-review" -MainFile (Join-Path $functionsRoot "ai-tag-review\index.ts")
 

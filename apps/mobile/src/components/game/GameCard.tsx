@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { Animated, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+
 import type { GameSearchResult, GameStatus } from '../../domain/types';
-import { colors, radius, spacing, typography, STATUS_LABELS, PLATFORM_COLORS, GENRE_COLORS } from '../../styles/tokens';
+import { useAppTheme } from '../../theme/appTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -17,172 +18,76 @@ interface GameCardProps {
     showStatus?: boolean;
 }
 
-// Holographic shimmer effect component
-function HolographicShimmer({ visible }: { visible: boolean }) {
-    const shimmerAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        if (visible) {
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(shimmerAnim, {
-                        toValue: 1,
-                        duration: 2000,
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(shimmerAnim, {
-                        toValue: 0,
-                        duration: 2000,
-                        useNativeDriver: true,
-                    }),
-                ])
-            ).start();
-        }
-    }, [visible]);
-
-    if (!visible) return null;
-
-    const translateX = shimmerAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-100, 100],
-    });
-
-    return (
-        <Animated.View
-            style={[
-                styles.shimmerOverlay,
-                {
-                    transform: [{ translateX }, { skewX: '-20deg' }],
-                    opacity: shimmerAnim.interpolate({
-                        inputRange: [0, 0.5, 1],
-                        outputRange: [0, 0.3, 0],
-                    }),
-                },
-            ]}
-            pointerEvents="none"
-        >
-            <LinearGradient
-                colors={['transparent', 'rgba(255,255,255,0.3)', 'transparent']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.shimmerGradient}
-            />
-        </Animated.View>
-    );
-}
-
-// Status indicator badge
-function StatusBadge({ status }: { status: GameStatus }) {
-    const statusColor = colors.status[status];
-
-    return (
-        <View style={[styles.statusBadge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status]}</Text>
-        </View>
-    );
-}
+const MATCH_META = {
+    company: { icon: 'business-outline', label: 'Developer match' },
+    character: { icon: 'person-outline', label: 'Character match' },
+} as const;
 
 export function GameCard({ game, onPress, status, userRating, compact = false, showStatus = true }: GameCardProps) {
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const normalizedRating = game.rating ? (game.rating / 20).toFixed(1) : null;
     const scaleAnim = useRef(new Animated.Value(1)).current;
+    const matchMeta = game.matchType && game.matchType !== 'title' ? MATCH_META[game.matchType] : null;
 
-    const handlePressIn = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 0.97,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
+    const pressIn = () => {
+        Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true, friction: 8 }).start();
     };
-
-    const handlePressOut = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
+    const pressOut = () => {
+        Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, friction: 8 }).start();
     };
 
     if (compact) {
         return (
-            <Pressable
-                onPress={onPress}
-                onPressIn={handlePressIn}
-                onPressOut={handlePressOut}
-                style={styles.compactContainer}
-            >
+            <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} style={styles.compactContainer}>
                 <Animated.View style={[styles.compactCard, { transform: [{ scale: scaleAnim }] }]}>
-                    <View style={styles.compactCoverContainer}>
+                    <View style={styles.compactCoverShell}>
                         {game.coverUrl ? (
-                            <Image
-                                source={{ uri: game.coverUrl }}
-                                style={styles.compactCover}
-                                contentFit="cover"
-                                transition={150}
-                            />
+                            <Image source={{ uri: game.coverUrl }} style={styles.compactCover} contentFit="cover" transition={150} />
                         ) : (
                             <View style={styles.compactCoverPlaceholder}>
-                                <Ionicons name="game-controller" size={16} color={colors.text.muted} />
+                                <Ionicons name="game-controller" size={16} color={theme.colors.text.muted} />
                             </View>
                         )}
-                        <HolographicShimmer visible={!!game.coverUrl} />
                     </View>
-                    <View style={styles.compactInfo}>
-                        <Text style={styles.compactTitle} numberOfLines={1}>{game.title}</Text>
-                        {game.releaseDate && (
-                            <Text style={styles.compactYear}>{new Date(game.releaseDate).getFullYear()}</Text>
-                        )}
-                    </View>
+                    <Text style={styles.compactTitle} numberOfLines={1}>{game.title}</Text>
+                    {game.releaseDate && <Text style={styles.compactYear}>{new Date(game.releaseDate).getFullYear()}</Text>}
                 </Animated.View>
             </Pressable>
         );
     }
 
     return (
-        <Pressable
-            onPress={onPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            style={styles.container}
-        >
+        <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} style={styles.container}>
             <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
-                {/* Cover art with glow effect */}
-                <View style={styles.coverWrapper}>
-                    <View style={[styles.coverGlow, game.coverUrl && styles.coverGlowVisible]} />
-                    <View style={styles.coverContainer}>
-                        {game.coverUrl ? (
-                            <Image
-                                source={{ uri: game.coverUrl }}
-                                style={styles.cover}
-                                contentFit="cover"
-                                transition={200}
-                            />
-                        ) : (
-                            <View style={styles.coverPlaceholder}>
-                                <Ionicons name="game-controller-outline" size={28} color={colors.text.muted} />
-                            </View>
-                        )}
-                        <HolographicShimmer visible={!!game.coverUrl} />
-                    </View>
+                <LinearGradient
+                    colors={[`${theme.colors.hero.primary}12`, `${theme.colors.hero.secondary}08`, 'transparent']}
+                    style={StyleSheet.absoluteFill}
+                />
+
+                <View style={styles.coverWrap}>
+                    <View style={[styles.coverGlow, { backgroundColor: `${theme.colors.hero.primary}24` }]} />
+                    {game.coverUrl ? (
+                        <Image source={{ uri: game.coverUrl }} style={styles.cover} contentFit="cover" transition={180} />
+                    ) : (
+                        <View style={styles.coverPlaceholder}>
+                            <Ionicons name="game-controller-outline" size={28} color={theme.colors.text.muted} />
+                        </View>
+                    )}
                 </View>
 
-                {/* Info section */}
                 <View style={styles.info}>
-                    {/* Title and year */}
                     <View style={styles.titleRow}>
                         <Text style={styles.title} numberOfLines={2}>{game.title}</Text>
-                        {game.releaseDate && (
-                            <Text style={styles.year}>{new Date(game.releaseDate).getFullYear()}</Text>
-                        )}
+                        {game.releaseDate && <Text style={styles.year}>{new Date(game.releaseDate).getFullYear()}</Text>}
                     </View>
 
-                    {/* Genre chips - max 2 */}
                     {game.genres.length > 0 && (
-                        <View style={styles.chips}>
+                        <View style={styles.genreRow}>
                             {game.genres.slice(0, 2).map((genre) => {
-                                const genreStyle = GENRE_COLORS[genre] || GENRE_COLORS.default;
+                                const genreStyle = theme.genreColors[genre] || theme.genreColors.default;
                                 return (
-                                    <View key={genre} style={[styles.genreChip, { backgroundColor: genreStyle.bg, borderColor: genreStyle.text + '30' }]}>
+                                    <View key={genre} style={[styles.genreChip, { backgroundColor: genreStyle.bg, borderColor: `${genreStyle.text}35` }]}>
                                         <Text style={[styles.genreText, { color: genreStyle.text }]}>{genre}</Text>
                                     </View>
                                 );
@@ -190,46 +95,48 @@ export function GameCard({ game, onPress, status, userRating, compact = false, s
                         </View>
                     )}
 
-                    {/* Rating row */}
-                    <View style={styles.ratingRow}>
+                    <View style={styles.metaRow}>
                         {userRating !== undefined && userRating > 0 ? (
-                            <View style={styles.userRating}>
+                            <View style={styles.ratingGroup}>
                                 {[1, 2, 3, 4, 5].map((star) => (
                                     <Ionicons
                                         key={star}
                                         name={star <= userRating ? 'star' : 'star-outline'}
                                         size={12}
-                                        color={star <= userRating ? colors.star : colors.starEmpty}
+                                        color={star <= userRating ? theme.colors.star : theme.colors.starEmpty}
                                     />
                                 ))}
-                                <Text style={styles.userRatingText}>Your rating</Text>
+                                <Text style={styles.metaLabel}>Your rating</Text>
                             </View>
                         ) : normalizedRating ? (
-                            <>
-                                <Ionicons name="star" size={12} color={colors.star} />
+                            <View style={styles.ratingGroup}>
+                                <Ionicons name="star" size={12} color={theme.colors.star} />
                                 <Text style={styles.ratingValue}>{normalizedRating}</Text>
-                                <Text style={styles.ratingSource}>IGDB</Text>
-                            </>
+                                <Text style={styles.metaLabel}>IGDB</Text>
+                            </View>
                         ) : null}
                     </View>
 
-                    {/* Platform icons */}
+                    {matchMeta && (
+                        <View style={[styles.matchBadge, { backgroundColor: `${theme.colors.hero.secondary}16`, borderColor: `${theme.colors.hero.secondary}30` }]}>
+                            <Ionicons name={matchMeta.icon} size={11} color={theme.colors.hero.secondary} />
+                            <Text style={[styles.matchText, { color: theme.colors.hero.secondary }]} numberOfLines={1}>
+                                {game.matchLabel ?? matchMeta.label}
+                            </Text>
+                        </View>
+                    )}
+
                     {game.platforms.length > 0 && (
-                        <View style={styles.platforms}>
+                        <View style={styles.platformRow}>
                             {game.platforms.slice(0, 3).map((platform) => (
                                 <View
                                     key={platform}
                                     style={[
                                         styles.platformDot,
-                                        { backgroundColor: (PLATFORM_COLORS[platform] || colors.text.muted) + '30' },
+                                        { backgroundColor: `${theme.platformColors[platform] || theme.colors.text.muted}33` },
                                     ]}
                                 >
-                                    <View
-                                        style={[
-                                            styles.platformDotInner,
-                                            { backgroundColor: PLATFORM_COLORS[platform] || colors.text.muted },
-                                        ]}
-                                    />
+                                    <View style={[styles.platformDotInner, { backgroundColor: theme.platformColors[platform] || theme.colors.text.muted }]} />
                                 </View>
                             ))}
                             {game.platforms.length > 3 && (
@@ -239,276 +146,223 @@ export function GameCard({ game, onPress, status, userRating, compact = false, s
                     )}
                 </View>
 
-                {/* Status badge */}
-                {showStatus && status && <StatusBadge status={status} />}
+                {showStatus && status && (
+                    <View style={[styles.statusBadge, { backgroundColor: `${theme.colors.status[status]}18`, borderColor: `${theme.colors.status[status]}40` }]}>
+                        <Text style={[styles.statusText, { color: theme.colors.status[status] }]}>{theme.statusLabels[status]}</Text>
+                    </View>
+                )}
 
-                {/* Chevron */}
-                <Ionicons name="chevron-forward" size={18} color={colors.text.muted} style={styles.chevron} />
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.text.muted} style={styles.chevron} />
             </Animated.View>
         </Pressable>
     );
 }
 
-// Large hero card for featured games
 export function GameHeroCard({ game, onPress }: { game: GameSearchResult; onPress?: () => void }) {
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const normalizedRating = game.rating ? (game.rating / 20).toFixed(1) : null;
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     return (
         <Pressable
             onPress={onPress}
-            onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true, friction: 8 }).start()}
+            onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.985, useNativeDriver: true, friction: 8 }).start()}
             onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, friction: 8 }).start()}
             style={styles.heroContainer}
         >
             <Animated.View style={[styles.heroCard, { transform: [{ scale: scaleAnim }] }]}>
-                <View style={styles.heroCoverWrapper}>
-                    <View style={styles.heroCoverGlow} />
-                    {game.coverUrl ? (
-                        <Image
-                            source={{ uri: game.coverUrl }}
-                            style={styles.heroCover}
-                            contentFit="cover"
-                            transition={200}
-                        />
-                    ) : (
-                        <View style={styles.heroCoverPlaceholder}>
-                            <Ionicons name="game-controller" size={40} color={colors.text.muted} />
-                        </View>
-                    )}
-                    <HolographicShimmer visible={!!game.coverUrl} />
-                    <LinearGradient
-                        colors={['transparent', 'rgba(6,6,10,0.8)']}
-                        style={styles.heroGradient}
-                    />
-                </View>
-
+                {game.coverUrl ? (
+                    <Image source={{ uri: game.coverUrl }} style={styles.heroCover} contentFit="cover" transition={180} />
+                ) : (
+                    <View style={styles.heroCoverPlaceholder}>
+                        <Ionicons name="game-controller" size={36} color={theme.colors.text.muted} />
+                    </View>
+                )}
+                <LinearGradient
+                    colors={['transparent', theme.colors.surface.overlay]}
+                    style={styles.heroGradient}
+                />
                 <View style={styles.heroInfo}>
                     <Text style={styles.heroTitle} numberOfLines={2}>{game.title}</Text>
-                    {game.releaseDate && (
-                        <Text style={styles.heroYear}>{new Date(game.releaseDate).getFullYear()}</Text>
-                    )}
-                    {normalizedRating && (
-                        <View style={styles.heroRating}>
-                            <Ionicons name="star" size={14} color={colors.star} />
-                            <Text style={styles.heroRatingValue}>{normalizedRating}</Text>
-                        </View>
-                    )}
+                    <View style={styles.heroMeta}>
+                        {game.releaseDate && <Text style={styles.heroYear}>{new Date(game.releaseDate).getFullYear()}</Text>}
+                        {normalizedRating && (
+                            <View style={styles.heroRating}>
+                                <Ionicons name="star" size={13} color={theme.colors.star} />
+                                <Text style={styles.heroRatingValue}>{normalizedRating}</Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
             </Animated.View>
         </Pressable>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSheet.create({
     container: {
-        marginBottom: spacing.sm,
+        marginBottom: 10,
     },
     card: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.bg.card,
-        borderRadius: radius.lg,
+        backgroundColor: theme.colors.surface.glassStrong,
+        borderRadius: 26,
         borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.md,
-        gap: spacing.md,
+        borderColor: theme.colors.border,
+        padding: 14,
+        gap: 14,
+        overflow: 'hidden',
     },
-
-    // Cover styles with glow
-    coverWrapper: {
+    coverWrap: {
+        width: 66,
+        height: 90,
+        borderRadius: 18,
         position: 'relative',
     },
     coverGlow: {
-        position: 'absolute',
-        top: -4,
-        left: -4,
-        right: -4,
-        bottom: -4,
-        borderRadius: radius.md + 4,
-        backgroundColor: colors.neon.cyan,
-        opacity: 0,
-    },
-    coverGlowVisible: {
-        opacity: 0.15,
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 12,
-    },
-    coverContainer: {
-        width: 60,
-        height: 82,
-        borderRadius: radius.md,
-        overflow: 'hidden',
-        backgroundColor: colors.bg.tertiary,
-        borderWidth: 1,
-        borderColor: colors.border,
+        ...StyleSheet.absoluteFillObject,
+        borderRadius: 22,
+        transform: [{ scale: 1.06 }],
     },
     cover: {
         width: '100%',
         height: '100%',
+        borderRadius: 18,
     },
     coverPlaceholder: {
         width: '100%',
         height: '100%',
+        borderRadius: 18,
+        backgroundColor: theme.colors.bg.tertiary,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.bg.tertiary,
     },
-
-    // Holographic shimmer
-    shimmerOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        overflow: 'hidden',
-    },
-    shimmerGradient: {
-        width: 60,
-        height: '100%',
-    },
-
-    // Info section
     info: {
         flex: 1,
-        gap: spacing.xs,
+        gap: 8,
     },
     titleRow: {
-        gap: 2,
+        gap: 3,
     },
     title: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        fontSize: 15,
         lineHeight: 20,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.text.primary,
     },
     year: {
-        fontSize: typography.size.xs,
+        fontSize: 11,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
     },
-
-    // Genre chips
-    chips: {
+    genreRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: spacing.xs,
+        gap: 6,
     },
     genreChip: {
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 2,
-        borderRadius: radius.full,
+        paddingHorizontal: 9,
+        paddingVertical: 4,
+        borderRadius: 999,
         borderWidth: 1,
     },
     genreText: {
-        fontSize: typography.size['2xs'],
-        fontFamily: 'Inter_500Medium',
+        fontSize: 9,
+        fontFamily: 'Inter_600SemiBold',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.55,
     },
-
-    // Rating row
-    ratingRow: {
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    ratingGroup: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        marginTop: 2,
     },
     ratingValue: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.star,
+        fontSize: 11,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.star,
     },
-    ratingSource: {
-        fontSize: typography.size['2xs'],
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-        marginLeft: 2,
+    metaLabel: {
+        fontSize: 10,
+        fontFamily: 'Inter_500Medium',
+        color: theme.colors.text.muted,
     },
-    userRating: {
+    matchBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 2,
+        alignSelf: 'flex-start',
+        gap: 5,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 999,
+        borderWidth: 1,
     },
-    userRatingText: {
-        fontSize: typography.size['2xs'],
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-        marginLeft: 4,
+    matchText: {
+        maxWidth: 175,
+        fontSize: 10,
+        fontFamily: 'Inter_600SemiBold',
     },
-
-    // Platforms
-    platforms: {
+    platformRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
     },
     platformDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 7,
+        height: 7,
+        borderRadius: 4,
         padding: 1,
     },
     platformDotInner: {
-        width: 4,
-        height: 4,
-        borderRadius: 2,
-    },
-    platformMore: {
-        fontSize: typography.size['2xs'],
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
-        marginLeft: 2,
-    },
-
-    // Status badge
-    statusBadge: {
-        position: 'absolute',
-        top: spacing.sm,
-        right: spacing.xl + spacing.md,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: spacing.sm,
-        paddingVertical: 3,
-        borderRadius: radius.full,
-        borderWidth: 1,
-    },
-    statusDot: {
         width: 5,
         height: 5,
-        borderRadius: 2.5,
+        borderRadius: 3,
+    },
+    platformMore: {
+        fontSize: 10,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.muted,
+        marginLeft: 2,
+    },
+    statusBadge: {
+        position: 'absolute',
+        top: 10,
+        right: 42,
+        borderRadius: 999,
+        borderWidth: 1,
+        paddingHorizontal: 9,
+        paddingVertical: 5,
     },
     statusText: {
-        fontSize: typography.size['2xs'],
-        fontFamily: 'Inter_600SemiBold',
+        fontSize: 9,
+        fontFamily: 'Inter_700Bold',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.45,
     },
-
     chevron: {
         marginLeft: 'auto',
     },
-
-    // Compact variant
     compactContainer: {
-        width: 100,
+        width: 102,
     },
     compactCard: {
         alignItems: 'center',
+        gap: 6,
     },
-    compactCoverContainer: {
-        width: 80,
-        height: 110,
-        borderRadius: radius.md,
+    compactCoverShell: {
+        width: 84,
+        height: 116,
+        borderRadius: 20,
         overflow: 'hidden',
-        backgroundColor: colors.bg.tertiary,
+        backgroundColor: theme.colors.surface.glassStrong,
         borderWidth: 1,
-        borderColor: colors.border,
-        position: 'relative',
+        borderColor: theme.colors.border,
     },
     compactCover: {
         width: '100%',
@@ -520,88 +374,75 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    compactInfo: {
-        marginTop: spacing.xs,
-        alignItems: 'center',
-    },
     compactTitle: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_500Medium',
-        color: colors.text.primary,
+        fontSize: 11,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.text.primary,
         textAlign: 'center',
     },
     compactYear: {
-        fontSize: typography.size['2xs'],
+        fontSize: 10,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
     },
-
-    // Hero card
     heroContainer: {
-        width: SCREEN_WIDTH * 0.4,
+        width: SCREEN_WIDTH * 0.44,
     },
     heroCard: {
-        borderRadius: radius.lg,
+        borderRadius: 26,
         overflow: 'hidden',
-        backgroundColor: colors.bg.card,
+        backgroundColor: theme.colors.surface.glassStrong,
         borderWidth: 1,
-        borderColor: colors.border,
-    },
-    heroCoverWrapper: {
-        height: 180,
-        position: 'relative',
-    },
-    heroCoverGlow: {
-        position: 'absolute',
-        top: -8,
-        left: -8,
-        right: -8,
-        bottom: -8,
-        borderRadius: radius.lg + 8,
-        backgroundColor: colors.neon.purple,
-        opacity: 0.1,
+        borderColor: theme.colors.border,
     },
     heroCover: {
         width: '100%',
-        height: '100%',
+        height: 210,
     },
     heroCoverPlaceholder: {
-        width: '100%',
-        height: '100%',
+        height: 210,
+        backgroundColor: theme.colors.bg.tertiary,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.bg.tertiary,
     },
     heroGradient: {
         position: 'absolute',
-        bottom: 0,
         left: 0,
         right: 0,
-        height: 60,
+        bottom: 0,
+        height: 88,
     },
     heroInfo: {
-        padding: spacing.md,
-        gap: 2,
+        position: 'absolute',
+        left: 16,
+        right: 16,
+        bottom: 14,
+        gap: 4,
     },
     heroTitle: {
-        fontSize: typography.size.base,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        fontSize: 16,
+        lineHeight: 20,
+        fontFamily: 'Inter_700Bold',
+        color: '#ffffff',
+    },
+    heroMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
     },
     heroYear: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        fontSize: 11,
+        fontFamily: 'Inter_500Medium',
+        color: 'rgba(255,255,255,0.75)',
     },
     heroRating: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        marginTop: spacing.xs,
     },
     heroRatingValue: {
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_600SemiBold',
-        color: colors.star,
+        fontSize: 11,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.star,
     },
 });

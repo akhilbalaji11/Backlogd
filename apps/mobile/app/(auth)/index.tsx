@@ -2,255 +2,153 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing, typography } from '../../src/styles/tokens';
 
-// Animated neon orb
-function NeonOrb({ color, size, style }: { color: string; size: number; style: any }) {
-    const pulseAnim = useRef(new Animated.Value(0.3)).current;
+import { ThemeBackdrop } from '../../src/components/ui/ThemeBackdrop';
+import { ThemeModeToggle } from '../../src/components/ui/ThemeModeToggle';
+import { useAppTheme } from '../../src/theme/appTheme';
 
-    useEffect(() => {
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(pulseAnim, {
-                    toValue: 0.6,
-                    duration: 3000,
-                    useNativeDriver: false,
-                }),
-                Animated.timing(pulseAnim, {
-                    toValue: 0.3,
-                    duration: 3000,
-                    useNativeDriver: false,
-                }),
-            ])
-        ).start();
-    }, []);
-
-    return (
-        <Animated.View
-            style={[
-                style,
-                {
-                    width: size,
-                    height: size,
-                    borderRadius: size / 2,
-                    backgroundColor: color,
-                    opacity: pulseAnim,
-                    shadowColor: color,
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowRadius: size / 2,
-                },
-            ]}
-        />
-    );
-}
-
-// Feature row with icon
-function FeatureRow({ icon, text }: { icon: string; text: string }) {
-    const glowAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(glowAnim, {
-                    toValue: 1,
-                    duration: 2000,
-                    useNativeDriver: false,
-                }),
-                Animated.timing(glowAnim, {
-                    toValue: 0,
-                    duration: 2000,
-                    useNativeDriver: false,
-                }),
-            ])
-        ).start();
-    }, []);
-
-    return (
-        <View style={styles.featureRow}>
-            <Animated.View
-                style={[
-                    styles.featureIcon,
-                    {
-                        shadowColor: colors.neon.cyan,
-                        shadowOffset: { width: 0, height: 0 },
-                        shadowOpacity: glowAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.2, 0.5],
-                        }),
-                        shadowRadius: 8,
-                    },
-                ]}
-            >
-                <Ionicons name={icon as any} size={20} color={colors.neon.cyan} />
-            </Animated.View>
-            <Text style={styles.featureText}>{text}</Text>
-        </View>
-    );
-}
-
-// Neon button with glow
-function NeonButton({
+function CTAButton({
     title,
     onPress,
-    primary = true,
+    secondary = false,
 }: {
     title: string;
     onPress: () => void;
-    primary?: boolean;
+    secondary?: boolean;
 }) {
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    const glowAnim = useRef(new Animated.Value(0.5)).current;
-
-    useEffect(() => {
-        if (primary) {
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(glowAnim, {
-                        toValue: 0.8,
-                        duration: 1500,
-                        useNativeDriver: false,
-                    }),
-                    Animated.timing(glowAnim, {
-                        toValue: 0.5,
-                        duration: 1500,
-                        useNativeDriver: false,
-                    }),
-                ])
-            ).start();
-        }
-    }, [primary]);
-
-    const handlePressIn = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 0.97,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    const handlePressOut = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    if (primary) {
-        return (
-            <TouchableOpacity
-                onPress={onPress}
-                onPressIn={handlePressIn}
-                onPressOut={handlePressOut}
-                activeOpacity={0.9}
-                style={styles.primaryBtnContainer}
-            >
-                <Animated.View
-                    style={[
-                        styles.primaryBtnGlow,
-                        { opacity: glowAnim },
-                    ]}
-                />
-                <Animated.View style={[styles.primaryBtn, { transform: [{ scale: scaleAnim }] }]}>
-                    <LinearGradient
-                        colors={[colors.neon.cyan, colors.neon.purple]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.primaryBtnGradient}
-                    >
-                        <Text style={styles.primaryBtnText}>{title}</Text>
-                    </LinearGradient>
-                </Animated.View>
-            </TouchableOpacity>
-        );
-    }
+    const { theme } = useAppTheme();
+    const scale = useRef(new Animated.Value(1)).current;
 
     return (
         <TouchableOpacity
-            style={styles.secondaryBtn}
             onPress={onPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.9}
+            activeOpacity={0.92}
+            onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, friction: 8 }).start()}
+            onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 8 }).start()}
         >
-            <Animated.View style={[styles.secondaryBtnInner, { transform: [{ scale: scaleAnim }] }]}>
-                <Text style={styles.secondaryBtnText}>{title}</Text>
+            <Animated.View style={{ transform: [{ scale }] }}>
+                {secondary ? (
+                    <View style={[styles.secondaryButton, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+                        <Text style={[styles.secondaryButtonText, { color: theme.colors.text.primary }]}>{title}</Text>
+                    </View>
+                ) : (
+                    <LinearGradient
+                        colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.tertiary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.primaryButton}
+                    >
+                        <Text style={styles.primaryButtonText}>{title}</Text>
+                    </LinearGradient>
+                )}
             </Animated.View>
         </TouchableOpacity>
     );
 }
 
+function FeatureTile({ icon, title, blurb, accent }: { icon: keyof typeof Ionicons.glyphMap; title: string; blurb: string; accent: string }) {
+    const { theme } = useAppTheme();
+
+    return (
+        <View style={[styles.featureTile, { backgroundColor: theme.colors.surface.glass, borderColor: theme.colors.border, shadowColor: theme.colors.surface.cardShadow }]}>
+            <View style={[styles.featureIcon, { backgroundColor: `${accent}18`, borderColor: `${accent}40` }]}>
+                <Ionicons name={icon} size={18} color={accent} />
+            </View>
+            <Text style={[styles.featureTitle, { color: theme.colors.text.primary }]}>{title}</Text>
+            <Text style={[styles.featureBlurb, { color: theme.colors.text.secondary }]}>{blurb}</Text>
+        </View>
+    );
+}
+
 export default function WelcomeScreen() {
     const router = useRouter();
-    const logoAnim = useRef(new Animated.Value(0)).current;
+    const { theme } = useAppTheme();
+    const heroAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.spring(logoAnim, {
+        Animated.spring(heroAnim, {
             toValue: 1,
-            friction: 4,
-            tension: 40,
+            friction: 6,
+            tension: 48,
             useNativeDriver: true,
         }).start();
     }, []);
 
     return (
-        <View style={styles.container}>
-            {/* Background gradient */}
-            <LinearGradient
-                colors={[colors.bg.primary, colors.bg.secondary, colors.bg.primary]}
-                style={StyleSheet.absoluteFill}
-            />
+        <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
+            <ThemeBackdrop />
 
-            {/* Decorative neon orbs */}
-            <NeonOrb color={colors.neon.cyan} size={300} style={styles.orb1} />
-            <NeonOrb color={colors.neon.purple} size={200} style={styles.orb2} />
-            <NeonOrb color={colors.neon.pink} size={150} style={styles.orb3} />
-
-            <SafeAreaView style={styles.inner}>
-                {/* Logo */}
-                <Animated.View
-                    style={[
-                        styles.logoSection,
-                        {
-                            transform: [
-                                { scale: logoAnim },
-                                { translateY: logoAnim.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [20, 0],
-                                })},
-                            ],
-                        },
-                    ]}
-                >
-                    <View style={styles.logoIcon}>
-                        <View style={styles.logoIconGlow} />
-                        <Ionicons name="game-controller" size={40} color={colors.neon.cyan} />
+            <SafeAreaView style={styles.safeArea}>
+                <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+                    <View style={styles.topRow}>
+                        <View />
+                        <ThemeModeToggle compact />
                     </View>
-                    <Text style={styles.logoText}>Backlogd</Text>
-                    <Text style={styles.tagline}>Your games. Your story.</Text>
-                </Animated.View>
 
-                {/* Features */}
-                <View style={styles.features}>
-                    <FeatureRow icon="star" text="Rate & review every game you play" />
-                    <FeatureRow icon="people" text="Follow friends and share discoveries" />
-                    <FeatureRow icon="bulb" text="Get smart recommendations" />
-                </View>
+                    <Animated.View
+                        style={[
+                            styles.heroCard,
+                            {
+                                opacity: heroAnim,
+                                transform: [
+                                    { translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) },
+                                    { scale: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1] }) },
+                                ],
+                                backgroundColor: theme.colors.surface.glassStrong,
+                                borderColor: theme.colors.border,
+                                shadowColor: theme.colors.surface.cardShadow,
+                            },
+                        ]}
+                    >
+                        <LinearGradient
+                            colors={[`${theme.colors.hero.primary}1A`, `${theme.colors.hero.secondary}11`, `${theme.colors.hero.tertiary}16`]}
+                            style={StyleSheet.absoluteFill}
+                        />
+                        <View style={styles.logoBadge}>
+                            <LinearGradient
+                                colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.tertiary]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.logoBadgeGradient}
+                            >
+                                <Ionicons name="game-controller" size={34} color={theme.colors.white} />
+                            </LinearGradient>
+                        </View>
+                        <Text style={[styles.kicker, { color: theme.colors.neon.orange }]}>Track. Review. Flex.</Text>
+                        <Text style={[styles.title, { color: theme.colors.text.primary }]}>Backlogd</Text>
+                        <Text style={[styles.subtitle, { color: theme.colors.text.secondary }]}>
+                            A Letterboxd-style home for the games you finish, the ones you abandon, and the ones you swear you will get to next weekend.
+                        </Text>
 
-                {/* CTAs */}
-                <View style={styles.ctas}>
-                    <NeonButton
-                        title="Create Account"
-                        onPress={() => router.push('/(auth)/sign-up')}
-                        primary
-                    />
-                    <NeonButton
-                        title="Sign In"
-                        onPress={() => router.push('/(auth)/sign-in')}
-                    />
-                </View>
+                        <View style={styles.featureGrid}>
+                            <FeatureTile
+                                icon="layers"
+                                title="Colorful Lists"
+                                blurb="Build shelves, challenge runs, and chaotic genre collections."
+                                accent={theme.colors.hero.primary}
+                            />
+                            <FeatureTile
+                                icon="sparkles"
+                                title="Reactive Discovery"
+                                blurb="Recommendations and search feel more like a game launcher than a form."
+                                accent={theme.colors.hero.secondary}
+                            />
+                            <FeatureTile
+                                icon="people"
+                                title="Social Logging"
+                                blurb="Follow friends and see what they are rating, dropping, and replaying."
+                                accent={theme.colors.hero.tertiary}
+                            />
+                        </View>
+                    </Animated.View>
+
+                    <View style={styles.ctaStack}>
+                        <CTAButton title="Create Account" onPress={() => router.push('/(auth)/sign-up')} />
+                        <CTAButton title="Sign In" onPress={() => router.push('/(auth)/sign-in')} secondary />
+                    </View>
+                </ScrollView>
             </SafeAreaView>
         </View>
     );
@@ -259,153 +157,112 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.bg.primary,
     },
-    inner: {
+    safeArea: {
         flex: 1,
-        paddingHorizontal: spacing.lg,
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+    },
+    scroll: {
+        flexGrow: 1,
+    },
+    topRow: {
+        flexDirection: 'row',
         justifyContent: 'space-between',
-        paddingVertical: spacing.xl,
-    },
-
-    // Orbs
-    orb1: {
-        position: 'absolute',
-        top: -100,
-        right: -100,
-    },
-    orb2: {
-        position: 'absolute',
-        bottom: 200,
-        left: -80,
-    },
-    orb3: {
-        position: 'absolute',
-        bottom: -50,
-        right: 50,
-    },
-
-    // Logo
-    logoSection: {
         alignItems: 'center',
-        marginTop: spacing['2xl'],
+        paddingTop: 6,
+        marginBottom: 16,
     },
-    logoIcon: {
-        width: 88,
-        height: 88,
-        borderRadius: radius.xl,
-        backgroundColor: colors.bg.card,
+    heroCard: {
+        borderRadius: 34,
+        borderWidth: 1,
+        paddingHorizontal: 24,
+        paddingVertical: 28,
+        overflow: 'hidden',
+    },
+    logoBadge: {
+        width: 84,
+        height: 84,
+        borderRadius: 28,
+        overflow: 'hidden',
+        marginBottom: 18,
+    },
+    logoBadgeGradient: {
+        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: colors.neon.cyan + '40',
-        marginBottom: spacing.lg,
-        position: 'relative',
     },
-    logoIconGlow: {
-        position: 'absolute',
-        top: -4,
-        left: -4,
-        right: -4,
-        bottom: -4,
-        borderRadius: radius.xl + 4,
-        backgroundColor: colors.neon.cyan,
-        opacity: 0.2,
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 20,
-    },
-    logoText: {
-        fontSize: typography.size['4xl'],
-        color: colors.text.primary,
+    kicker: {
+        fontSize: 12,
         fontFamily: 'Inter_700Bold',
-        letterSpacing: -1.5,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+        marginBottom: 8,
     },
-    tagline: {
-        fontSize: typography.size.base,
-        color: colors.neon.cyan,
+    title: {
+        fontSize: 40,
+        lineHeight: 44,
+        fontFamily: 'Inter_700Bold',
+        letterSpacing: -1.6,
+    },
+    subtitle: {
+        marginTop: 12,
+        fontSize: 15,
+        lineHeight: 24,
         fontFamily: 'Inter_400Regular',
-        marginTop: spacing.xs,
-        letterSpacing: 0.5,
+        maxWidth: 360,
     },
-
-    // Features
-    features: {
-        gap: spacing.lg,
+    featureGrid: {
+        gap: 14,
+        marginTop: 28,
     },
-    featureRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.md,
+    featureTile: {
+        borderRadius: 24,
+        borderWidth: 1,
+        padding: 16,
     },
     featureIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: radius.md,
-        backgroundColor: colors.bg.card,
+        width: 38,
+        height: 38,
+        borderRadius: 14,
+        borderWidth: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: colors.neon.cyan + '30',
+        marginBottom: 10,
     },
-    featureText: {
-        flex: 1,
-        fontSize: typography.size.base,
-        color: colors.text.secondary,
+    featureTitle: {
+        fontSize: 16,
+        fontFamily: 'Inter_600SemiBold',
+        marginBottom: 4,
+    },
+    featureBlurb: {
+        fontSize: 13,
+        lineHeight: 20,
         fontFamily: 'Inter_400Regular',
     },
-
-    // CTAs
-    ctas: {
-        gap: spacing.md,
-        paddingBottom: spacing.base,
+    ctaStack: {
+        gap: 12,
+        marginTop: 18,
     },
-    primaryBtnContainer: {
-        position: 'relative',
-        borderRadius: radius.lg,
-    },
-    primaryBtnGlow: {
-        position: 'absolute',
-        top: -2,
-        left: -2,
-        right: -2,
-        bottom: -2,
-        borderRadius: radius.lg + 2,
-        backgroundColor: colors.neon.cyan,
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 16,
-    },
-    primaryBtn: {
-        borderRadius: radius.lg,
-        overflow: 'hidden',
-    },
-    primaryBtnGradient: {
-        paddingVertical: spacing.base + 4,
+    primaryButton: {
+        borderRadius: 22,
+        paddingVertical: 18,
         alignItems: 'center',
     },
-    primaryBtnText: {
-        fontSize: typography.size.md,
-        color: colors.bg.primary,
+    primaryButtonText: {
+        fontSize: 16,
         fontFamily: 'Inter_700Bold',
-        letterSpacing: 0.5,
+        color: '#ffffff',
+        letterSpacing: 0.3,
     },
-    secondaryBtn: {
-        borderRadius: radius.lg,
-        overflow: 'hidden',
-    },
-    secondaryBtnInner: {
-        borderWidth: 1.5,
-        borderColor: colors.neon.cyan + '60',
-        paddingVertical: spacing.base + 4,
+    secondaryButton: {
+        borderWidth: 1,
+        borderRadius: 22,
+        paddingVertical: 18,
         alignItems: 'center',
-        borderRadius: radius.lg,
     },
-    secondaryBtnText: {
-        fontSize: typography.size.md,
-        color: colors.neon.cyan,
+    secondaryButtonText: {
+        fontSize: 16,
         fontFamily: 'Inter_600SemiBold',
     },
 });
