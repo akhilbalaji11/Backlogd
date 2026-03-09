@@ -20,12 +20,14 @@ export function ThemeModeToggle({ compact = false }: { compact?: boolean }) {
                 compact && styles.containerCompact,
             ]}
         >
+            <View style={[styles.trackGlow, { backgroundColor: `${theme.colors.hero.primary}10` }]} />
             <View
                 style={[
                     styles.thumb,
                     {
                         backgroundColor: isDark ? theme.colors.hero.secondary : theme.colors.hero.primary,
                         alignSelf: isDark ? 'flex-end' : 'flex-start',
+                        shadowColor: theme.colors.surface.cardShadow,
                     },
                 ]}
             >
@@ -52,10 +54,15 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         padding: 4,
         justifyContent: 'center',
+        overflow: 'hidden',
     },
     containerCompact: {
         minWidth: 54,
         width: 54,
+    },
+    trackGlow: {
+        ...StyleSheet.absoluteFillObject,
+        borderRadius: 23,
     },
     thumb: {
         width: 38,
@@ -63,6 +70,10 @@ const styles = StyleSheet.create({
         borderRadius: 19,
         alignItems: 'center',
         justifyContent: 'center',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.18,
+        shadowRadius: 10,
+        elevation: 3,
     },
     label: {
         position: 'absolute',

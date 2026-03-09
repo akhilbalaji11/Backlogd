@@ -61,12 +61,12 @@ export function GameCard({ game, onPress, status, userRating, compact = false, s
         <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} style={styles.container}>
             <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
                 <LinearGradient
-                    colors={[`${theme.colors.hero.primary}12`, `${theme.colors.hero.secondary}08`, 'transparent']}
+                    colors={[`${theme.colors.hero.quaternary}18`, `${theme.colors.hero.primary}10`, 'transparent']}
                     style={StyleSheet.absoluteFill}
                 />
 
                 <View style={styles.coverWrap}>
-                    <View style={[styles.coverGlow, { backgroundColor: `${theme.colors.hero.primary}24` }]} />
+                    <View style={[styles.coverGlow, { backgroundColor: `${theme.colors.hero.secondary}22` }]} />
                     {game.coverUrl ? (
                         <Image source={{ uri: game.coverUrl }} style={styles.cover} contentFit="cover" transition={180} />
                     ) : (
@@ -214,6 +214,11 @@ const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSh
         padding: 14,
         gap: 14,
         overflow: 'hidden',
+        shadowColor: theme.colors.surface.cardShadow,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: theme.isDark ? 0.24 : 0.12,
+        shadowRadius: 18,
+        elevation: 4,
     },
     coverWrap: {
         width: 66,
@@ -224,7 +229,7 @@ const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSh
     coverGlow: {
         ...StyleSheet.absoluteFillObject,
         borderRadius: 22,
-        transform: [{ scale: 1.06 }],
+        transform: [{ scale: 1.08 }],
     },
     cover: {
         width: '100%',
@@ -394,6 +399,11 @@ const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSh
         backgroundColor: theme.colors.surface.glassStrong,
         borderWidth: 1,
         borderColor: theme.colors.border,
+        shadowColor: theme.colors.surface.cardShadow,
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: theme.isDark ? 0.24 : 0.12,
+        shadowRadius: 18,
+        elevation: 4,
     },
     heroCover: {
         width: '100%',

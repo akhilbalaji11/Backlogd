@@ -1,145 +1,209 @@
 import * as SecureStore from 'expo-secure-store';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 
-import { colors as legacyColors, radius, spacing, typography, animation, STATUS_ICONS, STATUS_LABELS, PLATFORM_COLORS, GENRE_COLORS } from '../styles/tokens';
+import { radius, spacing, typography, animation, STATUS_ICONS, STATUS_LABELS, PLATFORM_COLORS, GENRE_COLORS } from '../styles/tokens';
 
 export type ThemeMode = 'dark' | 'light';
 
 const STORAGE_KEY = 'backlogd-theme-mode';
 
+type WebStorageLike = {
+    getItem: (key: string) => string | null;
+    setItem: (key: string, value: string) => void;
+};
+
+function getWebStorage(): WebStorageLike | null {
+    if (Platform.OS !== 'web') return null;
+
+    const candidate = globalThis as typeof globalThis & { localStorage?: WebStorageLike };
+    return candidate.localStorage ?? null;
+}
+
+async function readStoredMode(): Promise<ThemeMode | null> {
+    const storage = getWebStorage();
+    if (storage) {
+        try {
+            const value = storage.getItem(STORAGE_KEY);
+            return value === 'dark' || value === 'light' ? value : null;
+        } catch {
+            return null;
+        }
+    }
+
+    try {
+        const value = await SecureStore.getItemAsync(STORAGE_KEY);
+        return value === 'dark' || value === 'light' ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+function persistMode(nextMode: ThemeMode) {
+    const storage = getWebStorage();
+    if (storage) {
+        try {
+            storage.setItem(STORAGE_KEY, nextMode);
+        } catch {
+            return;
+        }
+        return;
+    }
+
+    SecureStore.setItemAsync(STORAGE_KEY, nextMode).catch(() => undefined);
+}
+
 const darkColors = {
     bg: {
-        primary: '#070914',
-        secondary: '#0d1324',
-        tertiary: '#141b31',
-        card: '#151e35',
-        elevated: '#1a2644',
+        primary: '#130d09',
+        secondary: '#1c140f',
+        tertiary: '#261913',
+        card: '#2d1e17',
+        elevated: '#37241b',
     },
     neon: {
-        cyan: '#52f3ff',
-        cyanDim: '#1896b7',
-        pink: '#ff4f8b',
-        pinkDim: '#c73669',
-        lime: '#9afc7b',
-        limeDim: '#39a76a',
-        purple: '#9b7bff',
-        purpleDim: '#664be8',
-        orange: '#ff9b54',
-        blue: '#4d8dff',
+        cyan: '#efd1a1',
+        cyanDim: '#b78c54',
+        pink: '#db8163',
+        pinkDim: '#a65a44',
+        lime: '#d6b36f',
+        limeDim: '#9e7842',
+        purple: '#b16a4c',
+        purpleDim: '#7b432f',
+        orange: '#f29f57',
+        blue: '#c7874c',
     },
-    purple: legacyColors.purple,
-    rose: legacyColors.rose,
+    purple: {
+        300: '#f2d5b2',
+        400: '#e7b47e',
+        500: '#d38a55',
+        600: '#b9643e',
+        700: '#8c4932',
+    },
+    rose: {
+        400: '#e6a07b',
+        500: '#c56b50',
+    },
     text: {
-        primary: '#f7fbff',
-        secondary: '#b4c2dd',
-        muted: '#6c7a99',
-        dim: '#42516f',
+        primary: '#fff7ef',
+        secondary: '#d4c0ac',
+        muted: '#a8876e',
+        dim: '#705644',
     },
     status: {
-        played: '#7cf59a',
-        playing: '#53f2ff',
-        backlog: '#ffc857',
-        wishlist: '#ff5c93',
+        played: '#d8c06d',
+        playing: '#f1a45f',
+        backlog: '#cf7447',
+        wishlist: '#f2dfbd',
     },
-    star: '#ffd166',
-    starEmpty: '#42516f',
-    border: '#223152',
-    borderLight: '#31456f',
+    star: '#f2c77a',
+    starEmpty: '#705644',
+    border: '#4f382a',
+    borderLight: '#6a4b38',
     white: '#ffffff',
     black: '#000000',
     transparent: 'transparent',
     glow: {
-        cyan: 'rgba(82, 243, 255, 0.35)',
-        pink: 'rgba(255, 79, 139, 0.35)',
-        lime: 'rgba(154, 252, 123, 0.30)',
-        purple: 'rgba(155, 123, 255, 0.32)',
+        cyan: 'rgba(239, 209, 161, 0.34)',
+        pink: 'rgba(219, 129, 99, 0.32)',
+        lime: 'rgba(214, 179, 111, 0.26)',
+        purple: 'rgba(177, 106, 76, 0.28)',
     },
     gradients: {
-        hero: ['rgba(7, 9, 20, 0)', 'rgba(7, 9, 20, 0.74)', '#070914'],
+        hero: ['rgba(19, 13, 9, 0)', 'rgba(19, 13, 9, 0.74)', '#130d09'],
         cardShine: ['rgba(255,255,255,0.14)', 'rgba(255,255,255,0)'],
-        neonCyan: ['#52f3ff', '#2d7dff'],
-        neonPink: ['#ff4f8b', '#ff8a5b'],
-        neonPurple: ['#9b7bff', '#5e5bff'],
+        neonCyan: ['#f2d29f', '#d18a4d'],
+        neonPink: ['#e69b77', '#bb6446'],
+        neonPurple: ['#f5dfbf', '#d27d4a'],
     },
     surface: {
-        glass: 'rgba(22, 31, 56, 0.72)',
-        glassStrong: 'rgba(18, 25, 46, 0.86)',
-        overlay: 'rgba(6, 10, 18, 0.74)',
-        cardShadow: 'rgba(5, 8, 18, 0.45)',
+        glass: 'rgba(57, 38, 25, 0.66)',
+        glassStrong: 'rgba(38, 24, 15, 0.84)',
+        overlay: 'rgba(14, 8, 5, 0.72)',
+        cardShadow: 'rgba(8, 4, 2, 0.42)',
     },
     hero: {
-        primary: '#4d8dff',
-        secondary: '#9b7bff',
-        tertiary: '#ff5c93',
-        quaternary: '#9afc7b',
+        primary: '#f2be72',
+        secondary: '#d98952',
+        tertiary: '#a95a3f',
+        quaternary: '#f3e1bf',
     },
 };
 
 const lightColors = {
     bg: {
-        primary: '#f6f8ff',
-        secondary: '#eef3ff',
-        tertiary: '#e4ebff',
-        card: '#fbfcff',
-        elevated: '#ffffff',
+        primary: '#fbf4ea',
+        secondary: '#f4e9da',
+        tertiary: '#ecdecd',
+        card: '#fff9f0',
+        elevated: '#fffdf8',
     },
     neon: {
-        cyan: '#0ea5e9',
-        cyanDim: '#0b6e9b',
-        pink: '#e11d74',
-        pinkDim: '#b11e61',
-        lime: '#2fbf71',
-        limeDim: '#208957',
-        purple: '#7c3aed',
-        purpleDim: '#5b21b6',
-        orange: '#f97316',
-        blue: '#2563eb',
+        cyan: '#d3a055',
+        cyanDim: '#9d6f2d',
+        pink: '#c76b4f',
+        pinkDim: '#944834',
+        lime: '#b88c45',
+        limeDim: '#8a6530',
+        purple: '#a45d43',
+        purpleDim: '#7a4130',
+        orange: '#dc8440',
+        blue: '#ae7040',
     },
-    purple: legacyColors.purple,
-    rose: legacyColors.rose,
+    purple: {
+        300: '#f3d6b8',
+        400: '#e6b07d',
+        500: '#cb8551',
+        600: '#ad633f',
+        700: '#7d472f',
+    },
+    rose: {
+        400: '#da8f6e',
+        500: '#bb6549',
+    },
     text: {
-        primary: '#101a33',
-        secondary: '#51607f',
-        muted: '#7b89a7',
-        dim: '#9ca8c0',
+        primary: '#2f1c12',
+        secondary: '#725646',
+        muted: '#9f836e',
+        dim: '#c2a891',
     },
     status: {
-        played: '#169b62',
-        playing: '#0284c7',
-        backlog: '#e98f00',
-        wishlist: '#db2777',
+        played: '#9d7a2d',
+        playing: '#c66d2b',
+        backlog: '#a75135',
+        wishlist: '#b28d68',
     },
-    star: '#f59e0b',
-    starEmpty: '#c6d0e7',
-    border: '#d7def0',
-    borderLight: '#c2ccdf',
+    star: '#d29438',
+    starEmpty: '#d9c3ae',
+    border: '#deccb6',
+    borderLight: '#ceb59a',
     white: '#ffffff',
     black: '#000000',
     transparent: 'transparent',
     glow: {
-        cyan: 'rgba(14, 165, 233, 0.22)',
-        pink: 'rgba(225, 29, 116, 0.18)',
-        lime: 'rgba(47, 191, 113, 0.18)',
-        purple: 'rgba(124, 58, 237, 0.20)',
+        cyan: 'rgba(211, 160, 85, 0.22)',
+        pink: 'rgba(199, 107, 79, 0.18)',
+        lime: 'rgba(184, 140, 69, 0.16)',
+        purple: 'rgba(164, 93, 67, 0.18)',
     },
     gradients: {
-        hero: ['rgba(246, 248, 255, 0)', 'rgba(246, 248, 255, 0.65)', '#f6f8ff'],
+        hero: ['rgba(251, 244, 234, 0)', 'rgba(251, 244, 234, 0.68)', '#fbf4ea'],
         cardShine: ['rgba(255,255,255,0.65)', 'rgba(255,255,255,0.02)'],
-        neonCyan: ['#68d7ff', '#6f7cff'],
-        neonPink: ['#ff7ab6', '#ffb86b'],
-        neonPurple: ['#8b5cf6', '#3b82f6'],
+        neonCyan: ['#efc98f', '#d58a47'],
+        neonPink: ['#df9774', '#c06747'],
+        neonPurple: ['#f4dfbf', '#d1824d'],
     },
     surface: {
-        glass: 'rgba(255, 255, 255, 0.72)',
-        glassStrong: 'rgba(255, 255, 255, 0.9)',
-        overlay: 'rgba(240, 244, 255, 0.74)',
-        cardShadow: 'rgba(77, 96, 142, 0.16)',
+        glass: 'rgba(255, 248, 239, 0.78)',
+        glassStrong: 'rgba(255, 252, 247, 0.92)',
+        overlay: 'rgba(53, 32, 20, 0.58)',
+        cardShadow: 'rgba(102, 75, 49, 0.16)',
     },
     hero: {
-        primary: '#6ea8ff',
-        secondary: '#9e8cff',
-        tertiary: '#ff8db2',
-        quaternary: '#7cdca5',
+        primary: '#d79c52',
+        secondary: '#bc6d42',
+        tertiary: '#8d5037',
+        quaternary: '#f2dfc0',
     },
 };
 
@@ -190,10 +254,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         let mounted = true;
 
-        SecureStore.getItemAsync(STORAGE_KEY)
+        readStoredMode()
             .then((value) => {
                 if (!mounted) return;
-                if (value === 'dark' || value === 'light') {
+                if (value) {
                     setModeState(value);
                 }
             })
@@ -208,7 +272,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     const setMode = (nextMode: ThemeMode) => {
         setModeState(nextMode);
-        SecureStore.setItemAsync(STORAGE_KEY, nextMode).catch(() => undefined);
+        persistMode(nextMode);
     };
 
     const toggleMode = () => {
