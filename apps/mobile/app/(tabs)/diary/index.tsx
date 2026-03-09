@@ -1,14 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Animated,
     FlatList,
     Modal,
-    Platform,
     ScrollView,
     StyleSheet,
     Switch,
@@ -18,8 +17,8 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 
+import { CalendarPickerModal } from '../../../src/components/ui/CalendarPickerModal';
 import { StarRating } from '../../../src/components/ui/StarRating';
 import { ThemeBackdrop } from '../../../src/components/ui/ThemeBackdrop';
 import { ThemeModeToggle } from '../../../src/components/ui/ThemeModeToggle';
@@ -27,7 +26,7 @@ import type { PlaySession } from '../../../src/domain/types';
 import { supabase } from '../../../src/lib/supabase';
 import { withTimeout } from '../../../src/lib/withTimeout';
 import { useAuthStore } from '../../../src/stores/authStore';
-import { colors, radius, spacing, typography, PLATFORM_COLORS } from '../../../src/styles/tokens';
+import { PLATFORM_COLORS, radius, spacing, typography } from '../../../src/styles/tokens';
 import { useAppTheme } from '../../../src/theme/appTheme';
 
 interface DiaryGameOption {
@@ -37,8 +36,22 @@ interface DiaryGameOption {
     releaseDate?: string;
 }
 
-function formatCardDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+interface DiaryEntry extends PlaySession {
+    game: DiaryGameOption;
+    rating?: number;
+    reviewText?: string;
+    spoiler?: boolean;
+}
+
+type AppThemeType = ReturnType<typeof useAppTheme>['theme'];
+
+function startOfDay(date: Date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function fromIsoDate(iso: string) {
+    const [year, month, day] = iso.split('-').map((value) => Number(value));
+    return new Date(year, month - 1, day);
 }
 
 function formatDiaryDate(date: Date) {
@@ -46,6 +59,7 @@ function formatDiaryDate(date: Date) {
         weekday: 'long',
         month: 'long',
         day: 'numeric',
+        year: 'numeric',
     });
 }
 
@@ -56,89 +70,180 @@ function toIsoDate(date: Date) {
     return `${year}-${month}-${day}`;
 }
 
+function clampDiaryDate(date: Date) {
+    const today = startOfDay(new Date());
+    return startOfDay(date) > today ? today : startOfDay(date);
+}
+
 function shiftDays(date: Date, delta: number) {
     const next = new Date(date);
     next.setDate(next.getDate() + delta);
-    return next;
+    return clampDiaryDate(next);
 }
 
-function groupByMonth(sessions: PlaySession[]) {
-    const groups: Record<string, PlaySession[]> = {};
-    for (const s of sessions) {
-        const key = new Date(s.playedOn).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function groupByMonth(sessions: DiaryEntry[]) {
+    const groups: Record<string, DiaryEntry[]> = {};
+
+    for (const session of sessions) {
+        const key = fromIsoDate(session.playedOn).toLocaleDateString('en-US', {
+            month: 'long',
+            year: 'numeric',
+        });
         groups[key] = groups[key] ?? [];
-        groups[key].push(s);
+        groups[key].push(session);
     }
+
     return Object.entries(groups);
 }
 
-// Session card with glow effect
-function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () => void }) {
+function mapGameOption(game: any): DiaryGameOption {
+    return {
+        id: game.id,
+        title: game.title,
+        coverUrl: game.cover_url ?? undefined,
+        releaseDate: game.release_date ?? undefined,
+    };
+}
+
+async function cleanupDetachedDiaryData(userId: string, gameId: string, excludingSessionId?: string) {
+    let remainingSessionsQuery = supabase
+        .from('play_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('game_id', gameId);
+
+    if (excludingSessionId) {
+        remainingSessionsQuery = remainingSessionsQuery.neq('id', excludingSessionId);
+    }
+
+    const { count, error: countError } = await withTimeout(
+        remainingSessionsQuery,
+        8_000,
+        'Check remaining diary sessions'
+    );
+
+    if (countError) throw countError;
+    if ((count ?? 0) > 0) return;
+
+    const [{ error: reviewError }, { error: statusError }] = await Promise.all([
+        withTimeout(
+            supabase.from('reviews').delete().eq('user_id', userId).eq('game_id', gameId),
+            8_000,
+            'Delete detached diary review'
+        ),
+        withTimeout(
+            supabase
+                .from('user_game_status')
+                .delete()
+                .eq('user_id', userId)
+                .eq('game_id', gameId)
+                .eq('status', 'played'),
+            8_000,
+            'Delete detached diary status'
+        ),
+    ]);
+
+    if (reviewError) throw reviewError;
+    if (statusError) throw statusError;
+}
+
+async function upsertDiaryReviewAndStatus(params: {
+    userId: string;
+    gameId: string;
+    rating: number;
+    reviewText: string;
+    noSpoilers: boolean;
+}) {
+    const { userId, gameId, rating, reviewText, noSpoilers } = params;
+
+    const [{ error: reviewError }, { error: statusError }] = await Promise.all([
+        withTimeout(
+            supabase.from('reviews').upsert({
+                user_id: userId,
+                game_id: gameId,
+                rating,
+                review_text: reviewText,
+                spoiler: !noSpoilers,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id,game_id' }),
+            8_000,
+            'Save diary review'
+        ),
+        withTimeout(
+            supabase.from('user_game_status').upsert({
+                user_id: userId,
+                game_id: gameId,
+                status: 'played',
+                last_updated: new Date().toISOString(),
+            }),
+            8_000,
+            'Mark diary game as played'
+        ),
+    ]);
+
+    if (reviewError) throw reviewError;
+    if (statusError) throw statusError;
+}
+
+function MonthHeader({ month, count }: { month: string; count: number }) {
     const { theme } = useAppTheme();
-    const scaleAnim = useRef(new Animated.Value(1)).current;
+    const styles = createStyles(theme);
+    const fadeAnim = useRef(new Animated.Value(0)).current;
 
-    const handlePressIn = () => {
-        Animated.spring(scaleAnim, {
-            toValue: 0.97,
-            useNativeDriver: true,
-            friction: 8,
-        }).start();
-    };
-
-    const handlePressOut = () => {
-        Animated.spring(scaleAnim, {
+    useEffect(() => {
+        Animated.timing(fadeAnim, {
             toValue: 1,
+            duration: 360,
             useNativeDriver: true,
-            friction: 8,
         }).start();
-    };
+    }, [fadeAnim]);
+
+    return (
+        <Animated.View style={[styles.monthHeader, { opacity: fadeAnim }]}>
+            <Text style={styles.monthLabel}>{month}</Text>
+            <View style={styles.monthCount}>
+                <Text style={styles.monthCountText}>{count} entries</Text>
+            </View>
+        </Animated.View>
+    );
+}
+
+function SessionCard({ session, onPress }: { session: DiaryEntry; onPress: () => void }) {
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
+    const scaleAnim = useRef(new Animated.Value(1)).current;
 
     return (
         <TouchableOpacity
+            activeOpacity={0.92}
             onPress={onPress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.9}
+            onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true, friction: 8 }).start()}
+            onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, friction: 8 }).start()}
         >
-            <Animated.View
-                style={[
-                    styles.sessionCard,
-                    {
-                        transform: [{ scale: scaleAnim }],
-                        backgroundColor: theme.colors.surface.glassStrong,
-                        borderColor: theme.colors.border,
-                        shadowColor: theme.colors.surface.cardShadow,
-                    },
-                ]}
-            >
+            <Animated.View style={[styles.sessionCard, { transform: [{ scale: scaleAnim }] }]}>
                 <LinearGradient
-                    colors={[`${theme.colors.hero.primary}14`, `${theme.colors.hero.secondary}08`, 'transparent']}
+                    colors={['#00000000', '#00000000', 'transparent']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={StyleSheet.absoluteFillObject}
                 />
+
                 <View style={styles.sessionRow}>
-                    {/* Date column */}
                     <View style={styles.dateColumn}>
-                        <Text style={[styles.sessionDay, { color: theme.colors.text.primary }]}>
-                            {new Date(session.playedOn).getDate()}
-                        </Text>
-                        <Text style={[styles.sessionMonth, { color: theme.colors.text.secondary }]}>
-                            {new Date(session.playedOn).toLocaleDateString('en-US', { month: 'short' })}
+                        <Text style={styles.sessionDay}>{fromIsoDate(session.playedOn).getDate()}</Text>
+                        <Text style={styles.sessionMonth}>
+                            {fromIsoDate(session.playedOn).toLocaleDateString('en-US', { month: 'short' })}
                         </Text>
                     </View>
 
-                    {/* Timeline connector */}
                     <View style={styles.timelineContainer}>
-                        <View style={[styles.timelineDot, { backgroundColor: theme.colors.hero.primary }]} />
-                        <View style={[styles.timelineLine, { backgroundColor: theme.colors.border }]} />
+                        <View style={styles.timelineDot} />
+                        <View style={styles.timelineLine} />
                     </View>
 
-                    {/* Content */}
                     <View style={styles.sessionContent}>
-                        {/* Game cover + info */}
                         <View style={styles.sessionHeader}>
-                            {session.game?.coverUrl ? (
+                            {session.game.coverUrl ? (
                                 <Image
                                     source={{ uri: session.game.coverUrl }}
                                     style={styles.sessionCover}
@@ -150,31 +255,51 @@ function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () 
                                     <Ionicons name="game-controller" size={16} color={theme.colors.text.muted} />
                                 </View>
                             )}
+
                             <View style={styles.sessionInfo}>
-                                <Text style={[styles.sessionGame, { color: theme.colors.text.primary }]} numberOfLines={2}>
-                                    {session.game?.title ?? 'Unknown Game'}
+                                <Text style={styles.sessionGame} numberOfLines={2}>
+                                    {session.game.title}
                                 </Text>
-                                {session.firstTimePlay && (
-                                    <View style={[styles.firstPlayBadge, { backgroundColor: `${theme.colors.hero.quaternary}16` }]}>
-                                        <Ionicons name="ribbon" size={10} color={theme.colors.hero.quaternary} />
-                                        <Text style={[styles.firstPlayText, { color: theme.colors.hero.quaternary }]}>First playthrough</Text>
-                                    </View>
-                                )}
+                                <View style={styles.sessionBadgeRow}>
+                                    {typeof session.rating === 'number' ? (
+                                        <View style={styles.ratingPill}>
+                                            <Ionicons name="star" size={11} color={theme.colors.hero.secondary} />
+                                            <Text style={styles.ratingPillText}>{session.rating.toFixed(1)}</Text>
+                                        </View>
+                                    ) : null}
+
+                                    {session.firstTimePlay ? (
+                                        <View style={styles.firstPlayBadge}>
+                                            <Ionicons name="ribbon" size={10} color={theme.colors.hero.quaternary} />
+                                            <Text style={styles.firstPlayText}>First play</Text>
+                                        </View>
+                                    ) : null}
+                                </View>
                             </View>
                         </View>
 
-                        {/* Notes */}
-                        {session.notes && (
-                            <Text style={[styles.sessionNotes, { color: theme.colors.text.secondary }]} numberOfLines={2}>{session.notes}</Text>
-                        )}
+                        {session.reviewText?.trim() ? (
+                            <Text style={styles.sessionNotes} numberOfLines={3}>
+                                {session.reviewText}
+                            </Text>
+                        ) : session.notes?.trim() ? (
+                            <Text style={styles.sessionNotes} numberOfLines={3}>
+                                {session.notes}
+                            </Text>
+                        ) : null}
 
-                        {/* Platform */}
-                        {session.platform && (
-                            <View style={styles.sessionPlatform}>
-                                <View style={[styles.platformDot, { backgroundColor: PLATFORM_COLORS[session.platform] || theme.colors.text.muted }]} />
-                                <Text style={[styles.platformText, { color: theme.colors.text.secondary }]}>{session.platform}</Text>
-                            </View>
-                        )}
+                        <View style={styles.sessionFooter}>
+                            {session.platform ? (
+                                <View style={styles.sessionPlatform}>
+                                    <View style={[styles.platformDot, { backgroundColor: PLATFORM_COLORS[session.platform] || theme.colors.text.muted }]} />
+                                    <Text style={styles.platformText}>{session.platform}</Text>
+                                </View>
+                            ) : (
+                                <Text style={styles.sessionMetaText}>{formatDiaryDate(fromIsoDate(session.playedOn))}</Text>
+                            )}
+
+                            <Text style={styles.editHint}>Tap to edit</Text>
+                        </View>
                     </View>
                 </View>
             </Animated.View>
@@ -182,86 +307,116 @@ function SessionCard({ session, onPress }: { session: PlaySession; onPress?: () 
     );
 }
 
-// Month header component
-function MonthHeader({ month, count }: { month: string; count: number }) {
-    const { theme } = useAppTheme();
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-        }).start();
-    }, []);
-
-    return (
-        <Animated.View style={[styles.monthHeader, { opacity: fadeAnim, borderBottomColor: theme.colors.border }]}>
-            <Text style={[styles.monthLabel, { color: theme.colors.text.primary }]}>{month}</Text>
-            <View style={[styles.monthCount, { backgroundColor: theme.colors.surface.glassStrong }]}>
-                <Text style={[styles.monthCountText, { color: theme.colors.text.secondary }]}>{count} sessions</Text>
-            </View>
-        </Animated.View>
-    );
-}
-
 export default function DiaryScreen() {
     const { user } = useAuthStore();
     const qc = useQueryClient();
     const { theme } = useAppTheme();
-    const [showAdd, setShowAdd] = useState(false);
+    const styles = useMemo(() => createStyles(theme), [theme]);
+    const today = useMemo(() => startOfDay(new Date()), []);
+
+    const [showEditor, setShowEditor] = useState(false);
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedGame, setSelectedGame] = useState<DiaryGameOption | null>(null);
-    const [playedOn, setPlayedOn] = useState(new Date());
+    const [playedOn, setPlayedOn] = useState(today);
     const [rating, setRating] = useState(0);
     const [reviewText, setReviewText] = useState('');
     const [firstTimePlay, setFirstTimePlay] = useState(false);
     const [noSpoilers, setNoSpoilers] = useState(true);
+    const [editingSession, setEditingSession] = useState<DiaryEntry | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState(false);
 
     const resetForm = () => {
         setSearchQuery('');
         setSelectedGame(null);
-        setPlayedOn(new Date());
+        setPlayedOn(today);
         setRating(0);
         setReviewText('');
         setFirstTimePlay(false);
         setNoSpoilers(true);
+        setEditingSession(null);
+        setConfirmDelete(false);
+        setShowDatePicker(false);
     };
 
-    const closeModal = () => {
-        setShowAdd(false);
+    const closeEditor = () => {
+        setShowEditor(false);
         resetForm();
     };
 
-    const { data: sessions = [], isLoading } = useQuery<PlaySession[]>({
+    const openCreateModal = () => {
+        resetForm();
+        setShowEditor(true);
+    };
+
+    const populateForm = (session: DiaryEntry) => {
+        setEditingSession(session);
+        setSelectedGame(session.game);
+        setPlayedOn(clampDiaryDate(fromIsoDate(session.playedOn)));
+        setRating(session.rating ?? 0);
+        setReviewText(session.reviewText ?? session.notes ?? '');
+        setFirstTimePlay(Boolean(session.firstTimePlay));
+        setNoSpoilers(!session.spoiler);
+        setSearchQuery('');
+        setConfirmDelete(false);
+        setShowEditor(true);
+    };
+
+    const { data: sessions = [], isLoading } = useQuery<DiaryEntry[]>({
         queryKey: ['play-sessions', user?.id],
         queryFn: async () => {
             if (!user) return [];
-            const { data, error } = await withTimeout(
-                supabase
-                    .from('play_sessions')
-                    .select('*, game:games(title, cover_url)')
-                    .eq('user_id', user.id)
-                    .order('played_on', { ascending: false }),
-                8_000,
-                'Load diary sessions'
-            );
-            if (error) {
-                console.warn('[Diary] sessions error:', error.message);
-                return [];
+
+            const [{ data: sessionRows, error: sessionError }, { data: reviewRows, error: reviewError }] = await Promise.all([
+                withTimeout(
+                    supabase
+                        .from('play_sessions')
+                        .select('id,user_id,game_id,played_on,first_time_play,minutes,platform,notes,created_at,game:games(id,title,cover_url,release_date)')
+                        .eq('user_id', user.id)
+                        .order('played_on', { ascending: false }),
+                    8_000,
+                    'Load diary sessions'
+                ),
+                withTimeout(
+                    supabase
+                        .from('reviews')
+                        .select('game_id,rating,review_text,spoiler')
+                        .eq('user_id', user.id),
+                    8_000,
+                    'Load diary reviews'
+                ),
+            ]);
+
+            if (sessionError) throw sessionError;
+            if (reviewError) throw reviewError;
+
+            const reviewsByGameId = new Map<string, { rating?: number; review_text?: string; spoiler?: boolean }>();
+
+            for (const review of reviewRows ?? []) {
+                reviewsByGameId.set(review.game_id, review);
             }
-            return (data ?? []).map((s) => ({
-                id: s.id,
-                userId: s.user_id,
-                gameId: s.game_id,
-                playedOn: s.played_on,
-                firstTimePlay: s.first_time_play ?? false,
-                minutes: s.minutes,
-                platform: s.platform,
-                notes: s.notes,
-                createdAt: s.created_at,
-                game: s.game ? { title: s.game.title, coverUrl: s.game.cover_url } : undefined,
-            }));
+
+            return (sessionRows ?? [])
+                .filter((row: any) => !!row.game)
+                .map((row: any) => {
+                    const linkedReview = reviewsByGameId.get(row.game_id);
+
+                    return {
+                        id: row.id,
+                        userId: row.user_id,
+                        gameId: row.game_id,
+                        playedOn: row.played_on,
+                        firstTimePlay: row.first_time_play ?? false,
+                        minutes: row.minutes ?? undefined,
+                        platform: row.platform ?? undefined,
+                        notes: row.notes ?? undefined,
+                        createdAt: row.created_at,
+                        game: mapGameOption(row.game),
+                        rating: linkedReview?.rating ? Number(linkedReview.rating) : undefined,
+                        reviewText: linkedReview?.review_text ?? undefined,
+                        spoiler: linkedReview?.spoiler ?? false,
+                    };
+                });
         },
         enabled: !!user,
     });
@@ -280,314 +435,369 @@ export default function DiaryScreen() {
                 8_000,
                 'Search diary games'
             );
+
             if (error) throw error;
-            return (data ?? []).map((g) => ({
-                id: g.id,
-                title: g.title,
-                coverUrl: g.cover_url ?? undefined,
-                releaseDate: g.release_date ?? undefined,
+
+            return (data ?? []).map((game) => ({
+                id: game.id,
+                title: game.title,
+                coverUrl: game.cover_url ?? undefined,
+                releaseDate: game.release_date ?? undefined,
             }));
         },
-        enabled: showAdd && !selectedGame && normalizedSearch.length >= 2,
+        enabled: showEditor && !selectedGame && normalizedSearch.length >= 2,
     });
 
-    const addMutation = useMutation({
+    const invalidateDiaryQueries = () => {
+        qc.invalidateQueries({ queryKey: ['play-sessions', user?.id] });
+        qc.invalidateQueries({ queryKey: ['profile-statuses', user?.id] });
+        qc.invalidateQueries({ queryKey: ['profile-reviews', user?.id] });
+    };
+
+    const saveMutation = useMutation({
         mutationFn: async () => {
             if (!user) throw new Error('Not signed in');
             if (!selectedGame) throw new Error('Select a game');
             if (rating <= 0) throw new Error('Rating is required');
             if (!reviewText.trim()) throw new Error('Review text is required');
 
-            const playedOnIso = toIsoDate(playedOn);
+            const nextGameId = selectedGame.id;
+            const sessionPayload = {
+                user_id: user.id,
+                game_id: nextGameId,
+                played_on: toIsoDate(playedOn),
+                first_time_play: firstTimePlay,
+                notes: reviewText.trim(),
+            };
 
-            const { error: sessionError } = await withTimeout(
-                supabase.from('play_sessions').insert({
-                    user_id: user.id,
-                    game_id: selectedGame.id,
-                    played_on: playedOnIso,
-                    first_time_play: firstTimePlay,
-                    notes: null,
-                }),
-                8_000,
-                'Create diary session'
-            );
-            if (sessionError) throw sessionError;
+            if (editingSession) {
+                const previousGameId = editingSession.gameId;
+                const { error } = await withTimeout(
+                    supabase
+                        .from('play_sessions')
+                        .update(sessionPayload)
+                        .eq('id', editingSession.id)
+                        .eq('user_id', user.id),
+                    8_000,
+                    'Update diary entry'
+                );
+                if (error) throw error;
 
-            const { error: reviewError } = await withTimeout(
-                supabase.from('reviews').upsert({
-                    user_id: user.id,
-                    game_id: selectedGame.id,
-                    rating,
-                    review_text: reviewText.trim(),
-                    spoiler: !noSpoilers,
-                    updated_at: new Date().toISOString(),
-                }, { onConflict: 'user_id,game_id' }),
-                8_000,
-                'Save diary review'
-            );
-            if (reviewError) throw reviewError;
+                if (previousGameId !== nextGameId) {
+                    await cleanupDetachedDiaryData(user.id, previousGameId, editingSession.id);
+                }
+            } else {
+                const { error } = await withTimeout(
+                    supabase.from('play_sessions').insert(sessionPayload),
+                    8_000,
+                    'Create diary entry'
+                );
+                if (error) throw error;
+            }
 
-            const { error: statusError } = await withTimeout(
-                supabase.from('user_game_status').upsert({
-                    user_id: user.id,
-                    game_id: selectedGame.id,
-                    status: 'played',
-                    last_updated: new Date().toISOString(),
-                }),
-                8_000,
-                'Mark game as played'
-            );
-            if (statusError) throw statusError;
+            await upsertDiaryReviewAndStatus({
+                userId: user.id,
+                gameId: nextGameId,
+                rating,
+                reviewText: reviewText.trim(),
+                noSpoilers,
+            });
         },
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['play-sessions'] });
-            qc.invalidateQueries({ queryKey: ['profile-statuses'] });
-            qc.invalidateQueries({ queryKey: ['profile-reviews'] });
-            closeModal();
+            invalidateDiaryQueries();
+            closeEditor();
         },
-        onError: (e: Error) => Alert.alert('Error', e.message),
     });
 
-    const grouped = groupByMonth(sessions);
+    const deleteMutation = useMutation({
+        mutationFn: async () => {
+            if (!user || !editingSession) throw new Error('No diary entry selected');
+
+            const { error } = await withTimeout(
+                supabase
+                    .from('play_sessions')
+                    .delete()
+                    .eq('id', editingSession.id)
+                    .eq('user_id', user.id),
+                8_000,
+                'Delete diary entry'
+            );
+            if (error) throw error;
+
+            await cleanupDetachedDiaryData(user.id, editingSession.gameId, editingSession.id);
+        },
+        onSuccess: () => {
+            invalidateDiaryQueries();
+            closeEditor();
+        },
+    });
+
+    const groupedSessions = useMemo(() => groupByMonth(sessions), [sessions]);
+    const saveDisabled = saveMutation.isPending || !selectedGame || rating <= 0 || !reviewText.trim();
 
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
             <ThemeBackdrop />
-            <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <View>
-                    <Text style={[styles.title, { color: theme.colors.text.primary }]}>Diary</Text>
-                    <Text style={[styles.subtitle, { color: theme.colors.hero.primary }]}>Your gaming journey</Text>
-                </View>
-                <View style={styles.headerControls}>
-                    <ThemeModeToggle compact />
-                    <TouchableOpacity style={[styles.addBtn, { backgroundColor: theme.colors.hero.primary, shadowColor: theme.colors.hero.primary }]} onPress={() => setShowAdd(true)}>
-                        <Ionicons name="add" size={24} color={theme.colors.bg.primary} />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            <LinearGradient
-                colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.tertiary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.heroCard}
-            >
-                <View>
-                    <Text style={styles.heroLabel}>Timeline</Text>
-                    <Text style={styles.heroValue}>{sessions.length}</Text>
-                    <Text style={styles.heroCopy}>logged sessions in your backlog</Text>
-                </View>
-                <TouchableOpacity style={styles.heroAction} onPress={() => setShowAdd(true)}>
-                    <Text style={styles.heroActionText}>Add Entry</Text>
-                </TouchableOpacity>
-            </LinearGradient>
-
-            {/* Content */}
-            {isLoading ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={theme.colors.hero.primary} />
-                </View>
-            ) : sessions.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                    <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surface.glassStrong }]}>
-                        <Ionicons name="calendar-outline" size={48} color={theme.colors.text.muted} />
+            <SafeAreaView style={styles.safeArea}>
+                <View style={styles.header}>
+                    <View style={styles.headerCopy}>
+                        <Text style={styles.title}>Diary</Text>
+                        <Text style={styles.subtitle}>Your gaming journey</Text>
                     </View>
-                    <Text style={[styles.emptyTitle, { color: theme.colors.text.primary }]}>No entries yet</Text>
-                    <Text style={[styles.emptySubtitle, { color: theme.colors.text.secondary }]}>Log your first gaming session to start your diary</Text>
-                    <TouchableOpacity style={[styles.emptyButton, { backgroundColor: theme.colors.hero.primary }]} onPress={() => setShowAdd(true)}>
-                        <Ionicons name="add" size={18} color={theme.colors.bg.primary} />
-                        <Text style={styles.emptyButtonText}>Add Entry</Text>
-                    </TouchableOpacity>
+                    <View style={styles.headerControls}>
+                        <ThemeModeToggle compact />
+                        <TouchableOpacity style={styles.addBtn} onPress={openCreateModal} activeOpacity={0.9}>
+                            <Ionicons name="add" size={22} color={theme.colors.bg.primary} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            ) : (
-                <FlatList
-                    data={grouped}
-                    keyExtractor={([month]) => month}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item: [month, slist], index }) => (
-                        <View style={styles.monthSection}>
-                            <MonthHeader month={month} count={slist.length} />
-                            <View style={styles.sessionsList}>
-                                {slist.map((session) => (
-                                    <SessionCard
-                                        key={session.id}
-                                        session={session}
-                                    />
-                                ))}
-                            </View>
+
+                <LinearGradient
+                    colors={[theme.colors.hero.primary, theme.colors.hero.secondary, theme.colors.hero.tertiary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.heroCard}
+                >
+                    <View>
+                        <Text style={styles.heroLabel}>Timeline</Text>
+                        <Text style={styles.heroValue}>{sessions.length}</Text>
+                        <Text style={styles.heroCopy}>logged entries in your diary</Text>
+                    </View>
+                    <TouchableOpacity style={styles.heroAction} onPress={openCreateModal} activeOpacity={0.9}>
+                        <Text style={styles.heroActionText}>Add Entry</Text>
+                    </TouchableOpacity>
+                </LinearGradient>
+
+                {isLoading ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color={theme.colors.hero.primary} />
+                    </View>
+                ) : sessions.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                        <View style={styles.emptyIcon}>
+                            <Ionicons name="calendar-outline" size={44} color={theme.colors.text.muted} />
                         </View>
-                    )}
-                    showsVerticalScrollIndicator={false}
-                />
-            )}
-
-            {/* Add Modal */}
-            <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
-                <SafeAreaView style={[styles.modal, { backgroundColor: theme.colors.bg.primary }]}>
-                    <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
-                        <TouchableOpacity onPress={closeModal}>
-                            <Text style={[styles.cancelBtn, { color: theme.colors.text.secondary }]}>Cancel</Text>
-                        </TouchableOpacity>
-                        <Text style={[styles.modalTitle, { color: theme.colors.text.primary }]}>New Entry</Text>
-                        <TouchableOpacity
-                            onPress={() => addMutation.mutate()}
-                            disabled={addMutation.isPending || !selectedGame || rating <= 0 || !reviewText.trim()}
-                        >
-                            <Text style={[
-                                styles.saveBtn,
-                                { color: theme.colors.hero.primary },
-                                (addMutation.isPending || !selectedGame || rating <= 0 || !reviewText.trim()) && { opacity: 0.4 },
-                            ]}>
-                                {addMutation.isPending ? 'Saving...' : 'Save'}
-                            </Text>
+                        <Text style={styles.emptyTitle}>No entries yet</Text>
+                        <Text style={styles.emptySubtitle}>Log your first gaming session to start your diary.</Text>
+                        <TouchableOpacity style={styles.emptyButton} onPress={openCreateModal} activeOpacity={0.9}>
+                            <Ionicons name="add" size={18} color={theme.colors.bg.primary} />
+                            <Text style={styles.emptyButtonText}>Add Entry</Text>
                         </TouchableOpacity>
                     </View>
-
-                    <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-                        {/* Game selection */}
-                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Game *</Text>
-                        {selectedGame ? (
-                            <View style={[styles.selectedGameCard, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
-                                {selectedGame.coverUrl && (
-                                    <Image source={{ uri: selectedGame.coverUrl }} style={styles.selectedGameCover} />
-                                )}
-                                <View style={{ flex: 1 }}>
-                                    <Text style={[styles.selectedGameTitle, { color: theme.colors.text.primary }]}>{selectedGame.title}</Text>
-                                    {selectedGame.releaseDate && (
-                                        <Text style={[styles.selectedGameYear, { color: theme.colors.text.secondary }]}>
-                                            {new Date(selectedGame.releaseDate).getFullYear()}
-                                        </Text>
-                                    )}
+                ) : (
+                    <FlatList
+                        data={groupedSessions}
+                        keyExtractor={([month]) => month}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item: [month, monthSessions] }) => (
+                            <View style={styles.monthSection}>
+                                <MonthHeader month={month} count={monthSessions.length} />
+                                <View style={styles.sessionsList}>
+                                    {monthSessions.map((session) => (
+                                        <SessionCard key={session.id} session={session} onPress={() => populateForm(session)} />
+                                    ))}
                                 </View>
-                                <TouchableOpacity onPress={() => setSelectedGame(null)}>
-                                    <Text style={[styles.changeBtn, { color: theme.colors.hero.primary }]}>Change</Text>
+                            </View>
+                        )}
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
+
+                <Modal visible={showEditor} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeEditor}>
+                    <SafeAreaView style={[styles.modal, { backgroundColor: theme.colors.bg.primary }]}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={closeEditor}>
+                                <Text style={styles.cancelBtn}>Cancel</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.modalTitle}>{editingSession ? 'Edit Entry' : 'New Entry'}</Text>
+                            <TouchableOpacity onPress={() => saveMutation.mutate()} disabled={saveDisabled}>
+                                <Text style={[styles.saveBtn, saveDisabled && styles.disabledText]}>
+                                    {saveMutation.isPending ? 'Saving...' : 'Save'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+                            <LinearGradient
+                                colors={[`${theme.colors.hero.primary}20`, `${theme.colors.hero.secondary}12`]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.modalHero}
+                            >
+                                <Text style={styles.modalHeroTitle}>{editingSession ? 'Refine the entry' : 'Capture the session'}</Text>
+                                <Text style={styles.modalHeroCopy}>Track the game, date, score, and your quick take in one place.</Text>
+                            </LinearGradient>
+
+                            <View style={styles.fieldBlock}>
+                                <Text style={styles.fieldLabel}>Game *</Text>
+                                {selectedGame ? (
+                                    <View style={styles.selectedGameCard}>
+                                        {selectedGame.coverUrl ? (
+                                            <Image source={{ uri: selectedGame.coverUrl }} style={styles.selectedGameCover} contentFit="cover" transition={150} />
+                                        ) : (
+                                            <View style={styles.sessionCoverPlaceholder}>
+                                                <Ionicons name="game-controller" size={16} color={theme.colors.text.muted} />
+                                            </View>
+                                        )}
+                                        <View style={styles.selectedGameInfo}>
+                                            <Text style={styles.selectedGameTitle}>{selectedGame.title}</Text>
+                                            {selectedGame.releaseDate ? (
+                                                <Text style={styles.selectedGameYear}>{new Date(selectedGame.releaseDate).getFullYear()}</Text>
+                                            ) : null}
+                                        </View>
+                                        <TouchableOpacity onPress={() => setSelectedGame(null)}>
+                                            <Text style={styles.changeBtn}>Change</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : (
+                                    <>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Search games..."
+                                            placeholderTextColor={theme.colors.text.muted}
+                                            value={searchQuery}
+                                            onChangeText={setSearchQuery}
+                                            selectionColor={theme.colors.hero.primary}
+                                            autoFocus
+                                        />
+
+                                        {normalizedSearch.length >= 2 ? (
+                                            <View style={styles.searchResults}>
+                                                {isSearchingGames ? (
+                                                    <ActivityIndicator color={theme.colors.hero.primary} style={{ paddingVertical: spacing.lg }} />
+                                                ) : gameOptions.length === 0 ? (
+                                                    <Text style={styles.noResultsText}>No matching games found.</Text>
+                                                ) : (
+                                                    gameOptions.map((game) => (
+                                                        <TouchableOpacity
+                                                            key={game.id}
+                                                            style={styles.searchResultRow}
+                                                            onPress={() => {
+                                                                setSelectedGame(game);
+                                                                setSearchQuery('');
+                                                            }}
+                                                        >
+                                                            <Text style={styles.searchResultTitle}>{game.title}</Text>
+                                                            {game.releaseDate ? (
+                                                                <Text style={styles.searchResultYear}>{new Date(game.releaseDate).getFullYear()}</Text>
+                                                            ) : null}
+                                                        </TouchableOpacity>
+                                                    ))
+                                                )}
+                                            </View>
+                                        ) : null}
+                                    </>
+                                )}
+                            </View>
+
+                            <View style={styles.fieldBlock}>
+                                <Text style={styles.fieldLabel}>Played On *</Text>
+                                <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)} activeOpacity={0.9}>
+                                    <View>
+                                        <Text style={styles.datePickerLabel}>Date</Text>
+                                        <Text style={styles.datePickerValue}>{formatDiaryDate(playedOn)}</Text>
+                                    </View>
+                                    <Ionicons name="calendar-outline" size={20} color={theme.colors.hero.primary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => setPlayedOn(today)}>
+                                    <Text style={styles.todayBtn}>Use Today</Text>
                                 </TouchableOpacity>
                             </View>
-                        ) : (
-                            <>
+
+                            <View style={styles.fieldBlock}>
+                                <Text style={styles.fieldLabel}>Rating *</Text>
+                                <View style={styles.ratingBlock}>
+                                    <StarRating value={rating} onChange={setRating} size={36} />
+                                </View>
+                            </View>
+
+                            <View style={styles.fieldBlock}>
+                                <Text style={styles.fieldLabel}>Review *</Text>
                                 <TextInput
-                                    style={[styles.input, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border, color: theme.colors.text.primary }]}
-                                    placeholder="Search games..."
+                                    style={[styles.input, styles.textArea]}
+                                    placeholder="What landed, what missed, and what made the session memorable?"
                                     placeholderTextColor={theme.colors.text.muted}
-                                    value={searchQuery}
-                                    onChangeText={setSearchQuery}
+                                    value={reviewText}
+                                    onChangeText={setReviewText}
+                                    multiline
+                                    textAlignVertical="top"
                                     selectionColor={theme.colors.hero.primary}
-                                    autoFocus
                                 />
-                                {normalizedSearch.length >= 2 && (
-                                    <View style={[styles.searchResults, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
-                                        {isSearchingGames ? (
-                                            <ActivityIndicator color={theme.colors.hero.primary} style={{ paddingVertical: spacing.lg }} />
-                                        ) : gameOptions.length === 0 ? (
-                                            <Text style={[styles.noResultsText, { color: theme.colors.text.secondary }]}>No matching games found</Text>
-                                        ) : (
-                                            gameOptions.map((game) => (
-                                                <TouchableOpacity
-                                                    key={game.id}
-                                                    style={[styles.searchResultRow, { borderBottomColor: theme.colors.border }]}
-                                                    onPress={() => {
-                                                        setSelectedGame(game);
-                                                        setSearchQuery('');
-                                                    }}
-                                                >
-                                                    <Text style={[styles.searchResultTitle, { color: theme.colors.text.primary }]}>{game.title}</Text>
-                                                    {game.releaseDate && (
-                                                        <Text style={[styles.searchResultYear, { color: theme.colors.text.secondary }]}>
-                                                            {new Date(game.releaseDate).getFullYear()}
-                                                        </Text>
-                                                    )}
+                            </View>
+
+                            <View style={styles.toggleRow}>
+                                <View style={styles.toggleTextWrap}>
+                                    <Text style={styles.toggleLabel}>First time playing</Text>
+                                    <Text style={styles.toggleDescription}>Mark this as your first playthrough.</Text>
+                                </View>
+                                <Switch
+                                    value={firstTimePlay}
+                                    onValueChange={setFirstTimePlay}
+                                    trackColor={{ false: theme.colors.border, true: theme.colors.hero.quaternary }}
+                                    thumbColor={theme.colors.white}
+                                />
+                            </View>
+
+                            <View style={styles.toggleRow}>
+                                <View style={styles.toggleTextWrap}>
+                                    <Text style={styles.toggleLabel}>No spoilers</Text>
+                                    <Text style={styles.toggleDescription}>Keep the attached review hidden in the feed.</Text>
+                                </View>
+                                <Switch
+                                    value={noSpoilers}
+                                    onValueChange={setNoSpoilers}
+                                    trackColor={{ false: theme.colors.border, true: theme.colors.hero.primary }}
+                                    thumbColor={theme.colors.white}
+                                />
+                            </View>
+
+                            {editingSession ? (
+                                <>
+                                    {!confirmDelete ? (
+                                        <TouchableOpacity style={styles.deleteButton} onPress={() => setConfirmDelete(true)} activeOpacity={0.9}>
+                                            <Text style={styles.deleteButtonText}>Delete Entry</Text>
+                                        </TouchableOpacity>
+                                    ) : (
+                                        <View style={styles.confirmDeleteCard}>
+                                            <Text style={styles.confirmDeleteText}>
+                                                Delete this diary entry? The linked played status and review will be cleaned up if nothing else references this game.
+                                            </Text>
+                                            <View style={styles.confirmDeleteActions}>
+                                                <TouchableOpacity style={styles.confirmDeleteCancel} onPress={() => setConfirmDelete(false)} activeOpacity={0.9}>
+                                                    <Text style={styles.confirmDeleteCancelText}>Keep It</Text>
                                                 </TouchableOpacity>
-                                            ))
-                                        )}
-                                    </View>
-                                )}
-                            </>
-                        )}
+                                                <TouchableOpacity style={styles.confirmDeleteConfirm} onPress={() => deleteMutation.mutate()} activeOpacity={0.9}>
+                                                    <Text style={styles.confirmDeleteConfirmText}>
+                                                        {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    )}
+                                </>
+                            ) : null}
+                        </ScrollView>
 
-                        {/* Date picker */}
-                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Played On *</Text>
-                        <View style={[styles.dateRow, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
-                            <TouchableOpacity
-                                style={[styles.dateAdjustBtn, { backgroundColor: theme.colors.bg.secondary }]}
-                                onPress={() => setPlayedOn((d) => shiftDays(d, -1))}
-                            >
-                                <Ionicons name="chevron-back" size={18} color={theme.colors.text.secondary} />
-                            </TouchableOpacity>
-                            <Text style={[styles.dateValue, { color: theme.colors.text.primary }]}>{formatDiaryDate(playedOn)}</Text>
-                            <TouchableOpacity
-                                style={[styles.dateAdjustBtn, { backgroundColor: theme.colors.bg.secondary }]}
-                                onPress={() => setPlayedOn((d) => shiftDays(d, 1))}
-                            >
-                                <Ionicons name="chevron-forward" size={18} color={theme.colors.text.secondary} />
-                            </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity onPress={() => setPlayedOn(new Date())}>
-                            <Text style={[styles.todayBtn, { color: theme.colors.hero.primary }]}>Use Today</Text>
-                        </TouchableOpacity>
-
-                        {/* Rating */}
-                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Rating *</Text>
-                        <View style={[styles.ratingBlock, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
-                            <StarRating value={rating} onChange={setRating} size={36} />
-                        </View>
-
-                        {/* Review */}
-                        <Text style={[styles.fieldLabel, { color: theme.colors.text.secondary }]}>Review *</Text>
-                        <TextInput
-                            style={[
-                                styles.input,
-                                styles.textArea,
-                                { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border, color: theme.colors.text.primary },
-                            ]}
-                            placeholder="Write your thoughts..."
-                            placeholderTextColor={theme.colors.text.muted}
-                            value={reviewText}
-                            onChangeText={setReviewText}
-                            multiline
-                            textAlignVertical="top"
-                            selectionColor={theme.colors.hero.primary}
+                        <CalendarPickerModal
+                            visible={showDatePicker}
+                            value={playedOn}
+                            maxDate={today}
+                            onChange={setPlayedOn}
+                            onRequestClose={() => setShowDatePicker(false)}
                         />
-
-                        {/* Toggles */}
-                        <View style={[styles.toggleRow, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.toggleLabel, { color: theme.colors.text.primary }]}>First time playing</Text>
-                                <Text style={[styles.toggleDescription, { color: theme.colors.text.secondary }]}>Mark as first playthrough</Text>
-                            </View>
-                            <Switch
-                                value={firstTimePlay}
-                                onValueChange={setFirstTimePlay}
-                                trackColor={{ false: theme.colors.border, true: theme.colors.hero.quaternary }}
-                                thumbColor={theme.colors.white}
-                            />
-                        </View>
-
-                        <View style={[styles.toggleRow, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.toggleLabel, { color: theme.colors.text.primary }]}>No spoilers</Text>
-                                <Text style={[styles.toggleDescription, { color: theme.colors.text.secondary }]}>Hide from activity feed</Text>
-                            </View>
-                            <Switch
-                                value={noSpoilers}
-                                onValueChange={setNoSpoilers}
-                                trackColor={{ false: theme.colors.border, true: theme.colors.hero.primary }}
-                                thumbColor={theme.colors.white}
-                            />
-                        </View>
-                    </ScrollView>
-                </SafeAreaView>
-            </Modal>
+                    </SafeAreaView>
+                </Modal>
             </SafeAreaView>
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppThemeType) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.bg.primary,
+    },
+    safeArea: {
+        flex: 1,
     },
     header: {
         flexDirection: 'row',
@@ -596,6 +806,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         paddingTop: spacing.lg,
         paddingBottom: spacing.md,
+        gap: spacing.base,
+    },
+    headerCopy: {
+        flex: 1,
     },
     headerControls: {
         flexDirection: 'row',
@@ -605,26 +819,26 @@ const styles = StyleSheet.create({
     title: {
         fontSize: typography.size['2xl'],
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
         letterSpacing: -0.5,
     },
     subtitle: {
+        marginTop: 4,
         fontSize: typography.size.sm,
         fontFamily: 'Inter_400Regular',
-        color: colors.neon.cyan,
-        marginTop: 2,
+        color: theme.colors.hero.primary,
     },
     addBtn: {
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: colors.neon.cyan,
+        backgroundColor: theme.colors.hero.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: colors.neon.cyan,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
+        shadowColor: theme.colors.hero.primary,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: theme.isDark ? 0.28 : 0.14,
+        shadowRadius: 16,
         elevation: 8,
     },
     heroCard: {
@@ -633,12 +847,17 @@ const styles = StyleSheet.create({
         borderRadius: radius.xl,
         padding: spacing.lg,
         flexDirection: 'row',
-        alignItems: 'flex-end',
         justifyContent: 'space-between',
+        alignItems: 'flex-end',
         gap: spacing.base,
+        shadowColor: theme.colors.surface.cardShadow,
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: theme.isDark ? 0.24 : 0.1,
+        shadowRadius: 22,
+        elevation: 8,
     },
     heroLabel: {
-        color: colors.white,
+        color: theme.colors.white,
         fontSize: typography.size.xs,
         fontFamily: 'Inter_700Bold',
         textTransform: 'uppercase',
@@ -646,36 +865,31 @@ const styles = StyleSheet.create({
     },
     heroValue: {
         marginTop: spacing.xs,
-        color: colors.white,
+        color: theme.colors.white,
         fontSize: typography.size['3xl'],
         fontFamily: 'Inter_700Bold',
     },
     heroCopy: {
-        color: colors.white,
-        opacity: 0.82,
+        color: 'rgba(255,255,255,0.82)',
         fontSize: typography.size.sm,
         fontFamily: 'Inter_500Medium',
     },
     heroAction: {
-        backgroundColor: 'rgba(255,255,255,0.82)',
         borderRadius: radius.full,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
+        backgroundColor: theme.isDark ? 'rgba(33, 20, 14, 0.74)' : 'rgba(255, 247, 239, 0.88)',
     },
     heroActionText: {
-        color: colors.black,
+        color: theme.isDark ? theme.colors.white : theme.colors.text.primary,
         fontSize: typography.size.sm,
         fontFamily: 'Inter_700Bold',
     },
-
-    // Loading
     loadingContainer: {
         flex: 1,
-        justifyContent: 'center',
         alignItems: 'center',
+        justifyContent: 'center',
     },
-
-    // Empty state
     emptyContainer: {
         flex: 1,
         alignItems: 'center',
@@ -685,19 +899,19 @@ const styles = StyleSheet.create({
     emptyIcon: {
         marginBottom: spacing.lg,
         padding: spacing.xl,
-        backgroundColor: colors.bg.card,
         borderRadius: radius.full,
+        backgroundColor: theme.colors.surface.glassStrong,
     },
     emptyTitle: {
         fontSize: typography.size.xl,
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
         marginBottom: spacing.sm,
     },
     emptySubtitle: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         textAlign: 'center',
         marginBottom: spacing.lg,
     },
@@ -705,18 +919,16 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.sm,
-        backgroundColor: colors.neon.cyan,
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.md,
         borderRadius: radius.full,
+        backgroundColor: theme.colors.hero.primary,
     },
     emptyButtonText: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.bg.primary,
+        color: theme.colors.bg.primary,
     },
-
-    // List
     listContent: {
         padding: spacing.lg,
         paddingBottom: spacing['3xl'],
@@ -724,8 +936,6 @@ const styles = StyleSheet.create({
     monthSection: {
         marginBottom: spacing.xl,
     },
-
-    // Month header
     monthHeader: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -733,37 +943,40 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
         paddingBottom: spacing.sm,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: theme.colors.border,
     },
     monthLabel: {
         fontSize: typography.size.lg,
         fontFamily: 'Inter_700Bold',
-        color: colors.neon.cyan,
+        color: theme.colors.text.primary,
         textTransform: 'uppercase',
         letterSpacing: 1,
     },
     monthCount: {
-        backgroundColor: colors.bg.card,
         paddingHorizontal: spacing.sm,
         paddingVertical: 4,
         borderRadius: radius.full,
+        backgroundColor: theme.colors.surface.glassStrong,
     },
     monthCountText: {
         fontSize: typography.size.xs,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.muted,
+        color: theme.colors.text.secondary,
     },
-
-    // Sessions
     sessionsList: {
         gap: spacing.sm,
     },
     sessionCard: {
-        backgroundColor: colors.bg.card,
         borderRadius: radius.lg,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         padding: spacing.md,
+        shadowColor: theme.colors.surface.cardShadow,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: theme.isDark ? 0.18 : 0.08,
+        shadowRadius: 14,
+        elevation: 3,
     },
     sessionRow: {
         flexDirection: 'row',
@@ -775,12 +988,12 @@ const styles = StyleSheet.create({
     sessionDay: {
         fontSize: typography.size['2xl'],
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
     sessionMonth: {
         fontSize: typography.size.xs,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.muted,
+        color: theme.colors.text.secondary,
         textTransform: 'uppercase',
     },
     timelineContainer: {
@@ -792,14 +1005,14 @@ const styles = StyleSheet.create({
         width: 10,
         height: 10,
         borderRadius: 5,
-        backgroundColor: colors.neon.cyan,
         marginTop: 6,
+        backgroundColor: theme.colors.hero.primary,
     },
     timelineLine: {
         width: 2,
         flex: 1,
-        backgroundColor: colors.border,
         marginTop: spacing.xs,
+        backgroundColor: theme.colors.border,
     },
     sessionContent: {
         flex: 1,
@@ -817,46 +1030,71 @@ const styles = StyleSheet.create({
         width: 48,
         height: 64,
         borderRadius: radius.sm,
-        backgroundColor: colors.bg.tertiary,
+        backgroundColor: theme.colors.bg.secondary,
         alignItems: 'center',
         justifyContent: 'center',
     },
     sessionInfo: {
         flex: 1,
-        gap: 4,
+        gap: 6,
     },
     sessionGame: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
+    },
+    sessionBadgeRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.xs,
+        alignItems: 'center',
+    },
+    ratingPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        borderRadius: radius.full,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 3,
+        backgroundColor: `${theme.colors.hero.secondary}18`,
+    },
+    ratingPillText: {
+        fontSize: typography.size['2xs'],
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.hero.secondary,
     },
     firstPlayBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        alignSelf: 'flex-start',
-        backgroundColor: colors.neon.lime + '15',
         paddingHorizontal: spacing.sm,
-        paddingVertical: 2,
+        paddingVertical: 3,
         borderRadius: radius.full,
+        backgroundColor: `${theme.colors.hero.quaternary}16`,
     },
     firstPlayText: {
         fontSize: typography.size['2xs'],
         fontFamily: 'Inter_500Medium',
-        color: colors.neon.lime,
+        color: theme.colors.hero.quaternary,
     },
     sessionNotes: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
-        marginTop: spacing.xs,
-        fontStyle: 'italic',
+        color: theme.colors.text.secondary,
+        marginTop: spacing.sm,
+        lineHeight: 20,
+    },
+    sessionFooter: {
+        marginTop: spacing.sm,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.sm,
     },
     sessionPlatform: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.xs,
-        marginTop: spacing.xs,
     },
     platformDot: {
         width: 6,
@@ -866,13 +1104,22 @@ const styles = StyleSheet.create({
     platformText: {
         fontSize: typography.size.xs,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
+        color: theme.colors.text.secondary,
     },
-
-    // Modal
+    sessionMetaText: {
+        fontSize: typography.size.xs,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+    },
+    editHint: {
+        fontSize: typography.size.xs,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.hero.primary,
+        textTransform: 'uppercase',
+        letterSpacing: 0.7,
+    },
     modal: {
         flex: 1,
-        backgroundColor: colors.bg.primary,
     },
     modalHeader: {
         flexDirection: 'row',
@@ -881,150 +1128,174 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.base,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: theme.colors.border,
     },
     cancelBtn: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
     },
     modalTitle: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
     saveBtn: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.neon.cyan,
+        color: theme.colors.hero.primary,
+    },
+    disabledText: {
+        opacity: 0.4,
     },
     modalBody: {
         padding: spacing.lg,
         gap: spacing.md,
-        paddingBottom: spacing['2xl'],
+        paddingBottom: spacing['3xl'],
+    },
+    modalHero: {
+        borderRadius: radius.lg,
+        padding: spacing.lg,
+    },
+    modalHeroTitle: {
+        fontSize: typography.size.xl,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.primary,
+    },
+    modalHeroCopy: {
+        marginTop: spacing.sm,
+        fontSize: typography.size.sm,
+        lineHeight: 20,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+    },
+    fieldBlock: {
+        gap: spacing.sm,
     },
     fieldLabel: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
     input: {
-        backgroundColor: colors.bg.card,
         borderRadius: radius.md,
         borderWidth: 1.5,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         padding: spacing.md,
         fontSize: typography.size.base,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
     textArea: {
-        minHeight: 120,
+        minHeight: 140,
         textAlignVertical: 'top',
     },
     selectedGameCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.bg.card,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         padding: spacing.md,
         gap: spacing.md,
     },
+    selectedGameInfo: {
+        flex: 1,
+    },
     selectedGameCover: {
-        width: 48,
-        height: 64,
+        width: 52,
+        height: 72,
         borderRadius: radius.sm,
     },
     selectedGameTitle: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
     selectedGameYear: {
         fontSize: typography.size.xs,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         marginTop: 2,
     },
     changeBtn: {
         fontSize: typography.size.sm,
-        fontFamily: 'Inter_500Medium',
-        color: colors.neon.cyan,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.hero.primary,
     },
     searchResults: {
-        backgroundColor: colors.bg.card,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         overflow: 'hidden',
     },
     noResultsText: {
         padding: spacing.lg,
         fontSize: typography.size.sm,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         textAlign: 'center',
     },
     searchResultRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        gap: spacing.sm,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: theme.colors.border,
     },
     searchResultTitle: {
         flex: 1,
         fontSize: typography.size.sm,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
     searchResultYear: {
         fontSize: typography.size.xs,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
+        color: theme.colors.text.secondary,
     },
-    dateRow: {
+    datePickerButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.bg.card,
+        justifyContent: 'space-between',
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         padding: spacing.md,
-        gap: spacing.md,
     },
-    dateAdjustBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: colors.bg.tertiary,
-        alignItems: 'center',
-        justifyContent: 'center',
+    datePickerLabel: {
+        fontSize: typography.size.xs,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.text.secondary,
+        textTransform: 'uppercase',
+        letterSpacing: 0.7,
     },
-    dateValue: {
-        flex: 1,
+    datePickerValue: {
+        marginTop: 4,
         fontSize: typography.size.base,
-        fontFamily: 'Inter_500Medium',
-        color: colors.text.primary,
-        textAlign: 'center',
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.text.primary,
     },
     todayBtn: {
-        fontSize: typography.size.sm,
-        fontFamily: 'Inter_500Medium',
-        color: colors.neon.cyan,
         alignSelf: 'center',
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.hero.primary,
     },
     ratingBlock: {
-        backgroundColor: colors.bg.card,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         padding: spacing.lg,
         alignItems: 'center',
     },
@@ -1032,21 +1303,83 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: colors.bg.card,
+        gap: spacing.md,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface.glassStrong,
         padding: spacing.md,
+    },
+    toggleTextWrap: {
+        flex: 1,
     },
     toggleLabel: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
     toggleDescription: {
-        fontSize: typography.size.xs,
-        fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
         marginTop: 2,
+        fontSize: typography.size.xs,
+        lineHeight: 18,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+    },
+    deleteButton: {
+        marginTop: spacing.sm,
+        borderRadius: radius.full,
+        borderWidth: 1,
+        borderColor: theme.colors.hero.tertiary,
+        paddingVertical: spacing.sm,
+        alignItems: 'center',
+    },
+    deleteButtonText: {
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.hero.tertiary,
+    },
+    confirmDeleteCard: {
+        marginTop: spacing.sm,
+        borderRadius: radius.lg,
+        borderWidth: 1,
+        borderColor: `${theme.colors.hero.tertiary}55`,
+        backgroundColor: theme.colors.surface.glassStrong,
+        padding: spacing.md,
+        gap: spacing.sm,
+    },
+    confirmDeleteText: {
+        fontSize: typography.size.sm,
+        lineHeight: 20,
+        fontFamily: 'Inter_400Regular',
+        color: theme.colors.text.secondary,
+    },
+    confirmDeleteActions: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    confirmDeleteCancel: {
+        flex: 1,
+        borderRadius: radius.full,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        paddingVertical: spacing.sm,
+        alignItems: 'center',
+    },
+    confirmDeleteCancelText: {
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_600SemiBold',
+        color: theme.colors.text.secondary,
+    },
+    confirmDeleteConfirm: {
+        flex: 1,
+        borderRadius: radius.full,
+        backgroundColor: theme.colors.hero.tertiary,
+        paddingVertical: spacing.sm,
+        alignItems: 'center',
+    },
+    confirmDeleteConfirmText: {
+        fontSize: typography.size.sm,
+        fontFamily: 'Inter_700Bold',
+        color: theme.colors.white,
     },
 });

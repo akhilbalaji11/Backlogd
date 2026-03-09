@@ -22,21 +22,24 @@ import { StarRating } from '../../src/components/ui/StarRating';
 import { ThemeBackdrop } from '../../src/components/ui/ThemeBackdrop';
 import { ThemeModeToggle } from '../../src/components/ui/ThemeModeToggle';
 import type { CharacterCredit, GameDetail, GameStatus, GameSearchResult, InvolvedCompany } from '../../src/domain/types';
-import { useDynamicTheme, hexToRgba } from '../../src/hooks/useDynamicTheme';
+import { hexToRgba } from '../../src/hooks/useDynamicTheme';
 import { gamesApi } from '../../src/lib/api';
 import { supabase } from '../../src/lib/supabase';
 import { withTimeout } from '../../src/lib/withTimeout';
 import { useAuthStore } from '../../src/stores/authStore';
-import { colors, radius, spacing, typography, STATUS_LABELS, STATUS_ICONS, GENRE_COLORS, PLATFORM_COLORS } from '../../src/styles/tokens';
+import { radius, spacing, typography, STATUS_LABELS, STATUS_ICONS, GENRE_COLORS, PLATFORM_COLORS } from '../../src/styles/tokens';
 import { useAppTheme } from '../../src/theme/appTheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = 320;
 
 const STATUS_ORDER: GameStatus[] = ['played', 'playing', 'backlog', 'wishlist'];
+type AppThemeType = ReturnType<typeof useAppTheme>['theme'];
 
 // Animated shimmer for hero
 function HeroShimmer() {
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const shimmerAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -100,6 +103,7 @@ function StatusButton({
     isLoading: boolean;
 }) {
     const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const statusColor = theme.colors.status[status];
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const glowAnim = useRef(new Animated.Value(0)).current;
@@ -194,6 +198,8 @@ function StatusButton({
 
 // Genre chip with dynamic colors
 function GenreChip({ genre }: { genre: string }) {
+    const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const genreStyle = GENRE_COLORS[genre] || GENRE_COLORS.default;
     const scaleAnim = useRef(new Animated.Value(0)).current;
 
@@ -225,6 +231,7 @@ function GenreChip({ genre }: { genre: string }) {
 // Platform indicator
 function PlatformIndicator({ platform }: { platform: string }) {
     const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const platformColor = PLATFORM_COLORS[platform] || theme.colors.text.muted;
 
     return (
@@ -238,6 +245,7 @@ function PlatformIndicator({ platform }: { platform: string }) {
 // Company Credits component
 function CompanyCredits({ involvedCompanies }: { involvedCompanies?: InvolvedCompany[] }) {
     const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     if (!involvedCompanies || involvedCompanies.length === 0) return null;
 
     const developers = Array.from(
@@ -287,6 +295,7 @@ function CharacterCredits({
     accentColor: string;
 }) {
     const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     if (!characters || characters.length === 0) return null;
 
     return (
@@ -331,6 +340,7 @@ export default function GameDetailScreen() {
     const qc = useQueryClient();
     const { user } = useAuthStore();
     const { theme } = useAppTheme();
+    const styles = createStyles(theme);
     const [currentStatus, setCurrentStatus] = useState<GameStatus | null>(null);
     const [userRating, setUserRating] = useState<number>(0);
     const [persistedRating, setPersistedRating] = useState<number>(0);
@@ -345,12 +355,9 @@ export default function GameDetailScreen() {
         refetchOnMount: 'always',
     });
 
-    // Dynamic theme based on cover image
-    const dynamicTheme = useDynamicTheme(game?.coverUrl);
-    const accentColor = dynamicTheme?.vibrant ?? theme.colors.hero.primary;
-    const surfaceTint = dynamicTheme
-        ? hexToRgba(dynamicTheme.dominant, theme.isDark ? 0.16 : 0.1)
-        : theme.colors.surface.glassStrong;
+    const accentColor = theme.colors.hero.secondary;
+    const accentSoft = theme.colors.hero.primary;
+    const surfaceTint = theme.colors.surface.glassStrong;
 
     // Load user's existing status and rating
     const { data: userActivity } = useQuery({
@@ -548,10 +555,11 @@ export default function GameDetailScreen() {
 
                     {/* Gradients */}
                     <LinearGradient
-                        colors={dynamicTheme
-                            ? [hexToRgba(dynamicTheme.dominant, 0.3), hexToRgba(dynamicTheme.dominant, 0.6), theme.colors.bg.primary]
-                            : [theme.colors.surface.overlay, theme.colors.surface.overlay, theme.colors.bg.primary]
-                        }
+                        colors={[
+                            `${accentSoft}${theme.isDark ? '2C' : '1E'}`,
+                            `${accentColor}${theme.isDark ? '62' : '42'}`,
+                            theme.colors.bg.primary,
+                        ]}
                         style={styles.heroGradient}
                     />
                     <HeroShimmer />
@@ -701,22 +709,22 @@ export default function GameDetailScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppThemeType) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.bg.primary,
+        backgroundColor: theme.colors.bg.primary,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: colors.bg.primary,
+        backgroundColor: theme.colors.bg.primary,
     },
     scrollContent: {
         paddingBottom: spacing['3xl'],
     },
     errorText: {
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         padding: spacing.lg,
         textAlign: 'center',
     },
@@ -738,7 +746,7 @@ const styles = StyleSheet.create({
     },
     heroPlaceholder: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: colors.bg.tertiary,
+        backgroundColor: theme.colors.bg.tertiary,
     },
     heroGradient: {
         ...StyleSheet.absoluteFillObject,
@@ -762,7 +770,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: theme.colors.surface.overlay,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -781,6 +789,11 @@ const styles = StyleSheet.create({
         borderRadius: radius.xl,
         borderWidth: 1,
         padding: spacing.lg,
+        shadowColor: theme.colors.surface.cardShadow,
+        shadowOffset: { width: 0, height: 16 },
+        shadowOpacity: theme.isDark ? 0.22 : 0.1,
+        shadowRadius: 20,
+        elevation: 5,
     },
     coverWrapper: {
         position: 'relative',
@@ -800,17 +813,17 @@ const styles = StyleSheet.create({
         height: 140,
         borderRadius: radius.lg,
         borderWidth: 2,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
     },
     coverPlaceholder: {
         width: 100,
         height: 140,
         borderRadius: radius.lg,
-        backgroundColor: colors.bg.tertiary,
+        backgroundColor: theme.colors.bg.secondary,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 2,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
     },
     gameInfo: {
         flex: 1,
@@ -820,13 +833,13 @@ const styles = StyleSheet.create({
     gameTitle: {
         fontSize: typography.size['2xl'],
         fontFamily: 'Inter_700Bold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
         lineHeight: 28,
     },
     gameYear: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
     },
     communityRating: {
         flexDirection: 'row',
@@ -842,12 +855,12 @@ const styles = StyleSheet.create({
     ratingValue: {
         fontSize: typography.size.lg,
         fontFamily: 'Inter_700Bold',
-        color: colors.star,
+        color: theme.colors.star,
     },
     ratingSource: {
         fontSize: typography.size.xs,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
+        color: theme.colors.text.muted,
     },
 
     // Genres
@@ -888,12 +901,12 @@ const styles = StyleSheet.create({
     platformText: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
     },
     morePlatforms: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.muted,
+        color: theme.colors.text.muted,
     },
 
     // Description
@@ -906,7 +919,7 @@ const styles = StyleSheet.create({
     descriptionText: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_400Regular',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         lineHeight: 24,
         marginTop: spacing.sm,
     },
@@ -927,12 +940,12 @@ const styles = StyleSheet.create({
     creditLabel: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.muted,
+        color: theme.colors.text.muted,
     },
     creditValue: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
         flex: 1,
     },
 
@@ -957,7 +970,7 @@ const styles = StyleSheet.create({
         width: '100%',
         aspectRatio: 1,
         borderRadius: radius.md,
-        backgroundColor: colors.bg.tertiary,
+        backgroundColor: theme.colors.bg.secondary,
     },
     characterPlaceholder: {
         width: '100%',
@@ -965,28 +978,33 @@ const styles = StyleSheet.create({
         borderRadius: radius.md,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.bg.tertiary,
+        backgroundColor: theme.colors.bg.secondary,
     },
     characterName: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
         lineHeight: 18,
     },
 
     // Actions section
     actionsSection: {
-        backgroundColor: colors.bg.card,
+        backgroundColor: theme.colors.surface.glassStrong,
         borderRadius: radius.xl,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: theme.colors.border,
         padding: spacing.lg,
         gap: spacing.lg,
+        shadowColor: theme.colors.surface.cardShadow,
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: theme.isDark ? 0.2 : 0.08,
+        shadowRadius: 20,
+        elevation: 4,
     },
     sectionTitle: {
         fontSize: typography.size.lg,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.text.primary,
+        color: theme.colors.text.primary,
     },
 
     // Status buttons
@@ -1020,7 +1038,7 @@ const styles = StyleSheet.create({
     ratingLabel: {
         fontSize: typography.size.sm,
         fontFamily: 'Inter_500Medium',
-        color: colors.text.secondary,
+        color: theme.colors.text.secondary,
         marginBottom: spacing.sm,
     },
     ratingContainer: {
@@ -1036,12 +1054,12 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.md,
         borderRadius: radius.lg,
         borderWidth: 2,
-        borderColor: colors.neon.pink,
-        backgroundColor: colors.neon.pink + '10',
+        borderColor: theme.colors.hero.secondary,
+        backgroundColor: `${theme.colors.hero.secondary}14`,
     },
     reviewButtonText: {
         fontSize: typography.size.base,
         fontFamily: 'Inter_600SemiBold',
-        color: colors.neon.pink,
+        color: theme.colors.hero.secondary,
     },
 });

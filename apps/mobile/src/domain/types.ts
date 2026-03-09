@@ -107,11 +107,13 @@ export interface GameList {
     id: string;
     userId: string;
     title: string;
+    subtitle?: string;
     description?: string;
     isPublic: boolean;
     createdAt: string;
     updatedAt: string;
     itemCount?: number;
+    items?: ListItem[];
 }
 
 export interface ListItem {

@@ -1,84 +1,77 @@
-// Design tokens — "Neon Arcade" aesthetic for Backlogd
-// Inspired by retro arcades + modern gaming UIs
+// Design tokens for Backlogd's ember-and-gold cinematic aesthetic.
+// Warm metallic surfaces, aged paper lights, and ember accents.
 
 export const colors = {
-    // Core backgrounds - deep space dark
     bg: {
-        primary: '#06060a',      // Near black with subtle blue
-        secondary: '#0c0c14',    // Slightly lighter
-        tertiary: '#12121c',     // Card backgrounds
-        card: '#16161f',         // Elevated cards
-        elevated: '#1a1a26',     // Highest elevation
+        primary: '#130d09',
+        secondary: '#1c140f',
+        tertiary: '#261913',
+        card: '#2d1e17',
+        elevated: '#37241b',
     },
 
-    // Neon accent palette
     neon: {
-        cyan: '#00f0ff',         // Electric cyan
-        cyanDim: '#00a8b3',
-        pink: '#ff2d6a',         // Hot pink
-        pinkDim: '#b3204a',
-        lime: '#00ff88',         // Neon green
-        limeDim: '#00b35e',
-        purple: '#a855f7',       // Vivid purple
-        purpleDim: '#7c3aed',
-        orange: '#ff6b35',       // Arcade orange
-        blue: '#3b82f6',         // Gaming blue
+        cyan: '#efd1a1',
+        cyanDim: '#b78c54',
+        pink: '#db8163',
+        pinkDim: '#a65a44',
+        lime: '#d6b36f',
+        limeDim: '#9e7842',
+        purple: '#b16a4c',
+        purpleDim: '#7b432f',
+        orange: '#f29f57',
+        blue: '#c7874c',
     },
 
-    // Legacy purple scale for compatibility
+    // Legacy field names retained for compatibility.
     purple: {
-        300: '#c4b5fd',
-        400: '#a78bfa',
-        500: '#8b5cf6',
-        600: '#7c3aed',
-        700: '#6d28d9',
+        300: '#f2d5b2',
+        400: '#e7b47e',
+        500: '#d38a55',
+        600: '#b9643e',
+        700: '#8c4932',
     },
 
     rose: {
-        400: '#fb7185',
-        500: '#f43f5e',
+        400: '#e6a07b',
+        500: '#c56b50',
     },
 
-    // Text colors
     text: {
-        primary: '#f8fafc',      // Almost white
-        secondary: '#94a3b8',    // Slate gray
-        muted: '#475569',        // Darker slate
-        dim: '#334155',          // Very muted
+        primary: '#fff7ef',
+        secondary: '#d4c0ac',
+        muted: '#a8876e',
+        dim: '#705644',
     },
 
-    // Status colors - vibrant gaming palette
     status: {
-        played: '#00ff88',       // Neon green - completed
-        playing: '#00f0ff',      // Cyan - in progress
-        backlog: '#fbbf24',      // Golden yellow - pending
-        wishlist: '#ff2d6a',     // Hot pink - desired
+        played: '#d8c06d',
+        playing: '#f1a45f',
+        backlog: '#cf7447',
+        wishlist: '#f2dfbd',
     },
 
-    // UI colors
-    star: '#fbbf24',             // Golden rating stars
-    starEmpty: '#334155',
-    border: '#1e293b',           // Subtle borders
-    borderLight: '#334155',      // Lighter borders
+    star: '#f2c77a',
+    starEmpty: '#705644',
+    border: '#4f382a',
+    borderLight: '#6a4b38',
     white: '#ffffff',
     black: '#000000',
     transparent: 'transparent',
 
-    // Special effects
     glow: {
-        cyan: 'rgba(0, 240, 255, 0.4)',
-        pink: 'rgba(255, 45, 106, 0.4)',
-        lime: 'rgba(0, 255, 136, 0.4)',
-        purple: 'rgba(168, 85, 247, 0.4)',
+        cyan: 'rgba(239, 209, 161, 0.34)',
+        pink: 'rgba(219, 129, 99, 0.32)',
+        lime: 'rgba(214, 179, 111, 0.26)',
+        purple: 'rgba(177, 106, 76, 0.28)',
     },
 
-    // Gradients (for LinearGradient)
     gradients: {
-        hero: ['rgba(6, 6, 10, 0)', 'rgba(6, 6, 10, 0.7)', '#06060a'],
+        hero: ['rgba(19, 13, 9, 0)', 'rgba(19, 13, 9, 0.72)', '#130d09'],
         cardShine: ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0)'],
-        neonCyan: ['#00f0ff', '#00a8b3'],
-        neonPink: ['#ff2d6a', '#b3204a'],
-        neonPurple: ['#a855f7', '#7c3aed'],
+        neonCyan: ['#f2d29f', '#d18a4d'],
+        neonPink: ['#e69b77', '#bb6446'],
+        neonPurple: ['#f5dfbf', '#d27d4a'],
     },
 } as const;
 
@@ -123,7 +116,6 @@ export const typography = {
     },
 } as const;
 
-// Animation timing
 export const animation = {
     duration: {
         fast: 150,
@@ -132,7 +124,6 @@ export const animation = {
         verySlow: 600,
     },
     easing: {
-        // These are for Reanimated
         default: 'cubic-bezier(0.4, 0, 0.2, 1)',
         bounce: 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
         smooth: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
@@ -153,31 +144,29 @@ export const STATUS_ICONS = {
     wishlist: 'heart',
 } as const;
 
-// Platform brand colors
 export const PLATFORM_COLORS: Record<string, string> = {
-    'PS5': '#00f0ff',
-    'PS4': '#00f0ff',
-    'Xbox': '#00ff88',
-    'Switch': '#ff2d6a',
-    'PC': '#a855f7',
-    'iOS': '#94a3b8',
-    'Android': '#00ff88',
-    'Other': '#475569',
+    PS5: '#d9aa62',
+    PS4: '#c88956',
+    Xbox: '#a67542',
+    Switch: '#ca7051',
+    PC: '#93533d',
+    iOS: '#b69a7d',
+    Android: '#b88a49',
+    Other: '#8c7362',
 };
 
-// Genre colors for visual variety
 export const GENRE_COLORS: Record<string, { bg: string; text: string }> = {
-    'Action': { bg: 'rgba(255, 45, 106, 0.15)', text: '#ff2d6a' },
-    'Adventure': { bg: 'rgba(0, 240, 255, 0.15)', text: '#00f0ff' },
-    'RPG': { bg: 'rgba(168, 85, 247, 0.15)', text: '#a855f7' },
-    'Strategy': { bg: 'rgba(0, 255, 136, 0.15)', text: '#00ff88' },
-    'Shooter': { bg: 'rgba(255, 107, 53, 0.15)', text: '#ff6b35' },
-    'Puzzle': { bg: 'rgba(251, 191, 36, 0.15)', text: '#fbbf24' },
-    'Racing': { bg: 'rgba(59, 130, 246, 0.15)', text: '#3b82f6' },
-    'Sports': { bg: 'rgba(34, 197, 94, 0.15)', text: '#22c55e' },
-    'Simulation': { bg: 'rgba(148, 163, 184, 0.15)', text: '#94a3b8' },
-    'Fighting': { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444' },
-    'Horror': { bg: 'rgba(139, 92, 246, 0.15)', text: '#8b5cf6' },
-    'Platformer': { bg: 'rgba(236, 72, 153, 0.15)', text: '#ec4899' },
-    'default': { bg: 'rgba(71, 85, 105, 0.15)', text: '#94a3b8' },
+    Action: { bg: 'rgba(201, 113, 76, 0.16)', text: '#cc7952' },
+    Adventure: { bg: 'rgba(214, 179, 111, 0.16)', text: '#d2a154' },
+    RPG: { bg: 'rgba(165, 95, 67, 0.16)', text: '#ad6648' },
+    Strategy: { bg: 'rgba(143, 109, 67, 0.16)', text: '#9b794a' },
+    Shooter: { bg: 'rgba(186, 97, 59, 0.16)', text: '#c46e44' },
+    Puzzle: { bg: 'rgba(232, 190, 108, 0.16)', text: '#d9a846' },
+    Racing: { bg: 'rgba(177, 117, 72, 0.16)', text: '#b57247' },
+    Sports: { bg: 'rgba(166, 132, 76, 0.16)', text: '#a57f42' },
+    Simulation: { bg: 'rgba(180, 149, 116, 0.16)', text: '#ac8968' },
+    Fighting: { bg: 'rgba(158, 80, 58, 0.16)', text: '#a75a43' },
+    Horror: { bg: 'rgba(118, 77, 56, 0.16)', text: '#8b573f' },
+    Platformer: { bg: 'rgba(208, 139, 92, 0.16)', text: '#c77f57' },
+    default: { bg: 'rgba(140, 115, 98, 0.16)', text: '#a1836e' },
 };
