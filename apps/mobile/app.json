@@ -16,15 +16,20 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.backlogd.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Used to select and upload your profile avatar."
+        "NSPhotoLibraryUsageDescription": "Used to select and upload your profile avatar.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#0D1117"
       },
-      "package": "com.backlogd.app"
+      "package": "com.backlogd.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -49,7 +54,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": ""
+        "projectId": "f6a3222e-5221-463d-b50d-f4ca3b28368d"
       }
     }
   }

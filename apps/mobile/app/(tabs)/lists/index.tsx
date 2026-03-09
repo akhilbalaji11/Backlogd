@@ -422,7 +422,6 @@ export default function ListsScreen() {
                 <View style={styles.header}>
                     <View style={styles.headerText}>
                         <Text style={styles.title}>Lists</Text>
-                        <Text style={styles.subtitle}>Build detailed collections with a name, subheading, description, and real game membership.</Text>
                     </View>
                     <ThemeModeToggle compact />
                 </View>
@@ -703,14 +702,6 @@ const createStyles = (theme: ReturnType<typeof useAppTheme>['theme']) => StyleSh
         lineHeight: 38,
         fontFamily: 'Inter_700Bold',
         color: theme.colors.text.primary,
-    },
-    subtitle: {
-        marginTop: 8,
-        fontSize: 14,
-        lineHeight: 22,
-        fontFamily: 'Inter_400Regular',
-        color: theme.colors.text.secondary,
-        maxWidth: 320,
     },
     heroCard: {
         marginHorizontal: 20,

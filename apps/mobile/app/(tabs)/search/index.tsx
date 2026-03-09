@@ -444,10 +444,6 @@ export default function SearchScreen() {
         syncDraftState(createDefaultFilters());
     };
 
-    const clearAppliedFilters = () => {
-        setFilters(createDefaultFilters());
-    };
-
     const applyDraftFilters = () => {
         setFilters(normalizeFilters({
             ...draftFilters,
@@ -458,9 +454,6 @@ export default function SearchScreen() {
     };
 
     const draftSortOptions = textSearchEnabled ? SEARCH_SORT_OPTIONS : BROWSE_SORT_OPTIONS;
-    const helperCopy = textSearchEnabled
-        ? 'Search scopes moved into Filters. Use the menu to narrow by studios, characters, platform, rating, or era.'
-        : 'Open Filters to browse by genres, platforms, release windows, and rating thresholds.';
 
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
@@ -516,54 +509,6 @@ export default function SearchScreen() {
                             </View>
                         ) : null}
                     </TouchableOpacity>
-                </View>
-
-                <Text style={[styles.helperText, { color: theme.colors.text.secondary }]}>
-                    Try `fromsoftware`, `bethesda`, `geralt`, or `ellie`.
-                </Text>
-
-                <View
-                    style={[
-                        styles.filterSummaryCard,
-                        {
-                            backgroundColor: theme.colors.surface.glassStrong,
-                            borderColor: theme.colors.border,
-                        },
-                    ]}
-                >
-                    <View style={styles.filterSummaryHeader}>
-                        <Text style={[styles.filterSummaryTitle, { color: theme.colors.text.primary }]}>Filter Menu</Text>
-                        {filterCount > 0 ? (
-                            <TouchableOpacity onPress={clearAppliedFilters} activeOpacity={0.88}>
-                                <Text style={[styles.filterSummaryReset, { color: theme.colors.hero.primary }]}>Clear</Text>
-                            </TouchableOpacity>
-                        ) : null}
-                    </View>
-                    <Text style={[styles.filterSummaryCopy, { color: theme.colors.text.secondary }]}>
-                        {helperCopy}
-                    </Text>
-                    {appliedFilterLabels.length > 0 ? (
-                        <View style={styles.summaryPillRow}>
-                            {appliedFilterLabels.map((label) => (
-                                <View
-                                    key={label}
-                                    style={[
-                                        styles.summaryPill,
-                                        {
-                                            backgroundColor: `${theme.colors.hero.primary}12`,
-                                            borderColor: `${theme.colors.hero.primary}26`,
-                                        },
-                                    ]}
-                                >
-                                    <Text style={[styles.summaryPillText, { color: theme.colors.hero.primary }]}>{label}</Text>
-                                </View>
-                            ))}
-                        </View>
-                    ) : (
-                        <Text style={[styles.filterSummaryHint, { color: theme.colors.text.muted }]}>
-                            No filters active yet. The old inline search tabs live inside the Filter menu now.
-                        </Text>
-                    )}
                 </View>
 
                 {isLoading ? (
@@ -639,21 +584,9 @@ export default function SearchScreen() {
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
                         >
-                            <LinearGradient
-                                colors={[`${theme.colors.hero.primary}26`, `${theme.colors.hero.secondary}18`, `${theme.colors.hero.quaternary}18`]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.modalHero}
-                            >
-                                <Text style={[styles.modalHeroTitle, { color: theme.colors.text.primary }]}>Refine the hunt</Text>
-                                <Text style={[styles.modalHeroCopy, { color: theme.colors.text.secondary }]}>
-                                    Search scopes, browse sorting, genres, platforms, rating thresholds, and release windows now all live in one place.
-                                </Text>
-                            </LinearGradient>
-
                             <FilterSection
                                 title="Search Scope"
-                                copy="This replaces the old tabs under the search bar. It applies whenever you type a search query."
+                                copy="Choose what typed searches should match."
                             >
                                 {SEARCH_SCOPE_OPTIONS.map((option) => (
                                     <ChoiceChip
@@ -861,58 +794,6 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontFamily: 'Inter_700Bold',
     },
-    helperText: {
-        marginTop: 10,
-        fontSize: 13,
-        fontFamily: 'Inter_400Regular',
-    },
-    filterSummaryCard: {
-        marginTop: 18,
-        marginBottom: 18,
-        borderRadius: 26,
-        borderWidth: 1,
-        padding: 18,
-        gap: 10,
-    },
-    filterSummaryHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    filterSummaryTitle: {
-        fontSize: 16,
-        fontFamily: 'Inter_700Bold',
-    },
-    filterSummaryReset: {
-        fontSize: 13,
-        fontFamily: 'Inter_700Bold',
-    },
-    filterSummaryCopy: {
-        fontSize: 13,
-        lineHeight: 20,
-        fontFamily: 'Inter_400Regular',
-    },
-    filterSummaryHint: {
-        fontSize: 12,
-        lineHeight: 18,
-        fontFamily: 'Inter_500Medium',
-    },
-    summaryPillRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    summaryPill: {
-        borderRadius: 999,
-        borderWidth: 1,
-        paddingHorizontal: 10,
-        paddingVertical: 7,
-    },
-    summaryPillText: {
-        fontSize: 11,
-        fontFamily: 'Inter_700Bold',
-        letterSpacing: 0.2,
-    },
     center: {
         flex: 1,
         alignItems: 'center',
@@ -996,22 +877,6 @@ const styles = StyleSheet.create({
         padding: 20,
         paddingBottom: 48,
         gap: 18,
-    },
-    modalHero: {
-        borderRadius: 28,
-        padding: 22,
-    },
-    modalHeroTitle: {
-        fontSize: 22,
-        lineHeight: 28,
-        fontFamily: 'Inter_700Bold',
-    },
-    modalHeroCopy: {
-        marginTop: 8,
-        fontSize: 14,
-        lineHeight: 22,
-        fontFamily: 'Inter_400Regular',
-        maxWidth: 320,
     },
     sectionBlock: {
         gap: 10,

@@ -344,21 +344,14 @@ export default function ProfileScreen() {
                         </View>
 
                         <Text style={styles.displayName}>{displayName}</Text>
-                        <Text style={styles.heroBio}>
-                            {profile?.bio || 'Curating a living diary of favorite bosses, abandoned side quests, and instant classics.'}
-                        </Text>
 
-                        <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.photoActionButton} onPress={handleChangePhoto} disabled={isUpdatingPhoto}>
-                                <Ionicons name={isUpdatingPhoto ? 'sync' : 'image-outline'} size={16} color={theme.colors.white} />
-                                <Text style={styles.photoActionText}>{isUpdatingPhoto ? 'Updating photo...' : 'Change photo'}</Text>
-                            </TouchableOpacity>
-                            {avatarUrl ? (
+                        {avatarUrl ? (
+                            <View style={styles.actionRow}>
                                 <TouchableOpacity style={styles.photoSecondaryButton} onPress={handleRemovePhoto} disabled={isUpdatingPhoto}>
                                     <Ionicons name="trash-outline" size={16} color={theme.colors.white} />
                                 </TouchableOpacity>
-                            ) : null}
-                        </View>
+                            </View>
+                        ) : null}
 
                         <View style={styles.statRow}>
                             <StatPill label="Played" value={statuses.filter((item: any) => item.status === 'played').length} />
@@ -488,33 +481,11 @@ const styles = StyleSheet.create({
         fontFamily: 'Inter_700Bold',
         letterSpacing: -1,
     },
-    heroBio: {
-        marginTop: 8,
-        color: 'rgba(255,255,255,0.82)',
-        fontSize: 14,
-        lineHeight: 21,
-        fontFamily: 'Inter_400Regular',
-        maxWidth: 310,
-    },
     actionRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
         marginTop: 16,
-    },
-    photoActionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 999,
-        backgroundColor: 'rgba(255,255,255,0.16)',
-    },
-    photoActionText: {
-        color: '#ffffff',
-        fontSize: 13,
-        fontFamily: 'Inter_600SemiBold',
     },
     photoSecondaryButton: {
         width: 40,

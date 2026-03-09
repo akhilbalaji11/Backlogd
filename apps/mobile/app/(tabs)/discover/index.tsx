@@ -217,9 +217,6 @@ export default function DiscoverScreen() {
                     <View style={styles.topRow}>
                         <View>
                             <Text style={[styles.headline, { color: theme.colors.text.primary }]}>Discover</Text>
-                            <Text style={[styles.copy, { color: theme.colors.text.secondary }]}>
-                                Curated shelves, social activity, and recommendation cards that feel closer to a launcher than a list.
-                            </Text>
                         </View>
                         <ThemeModeToggle compact />
                     </View>
@@ -329,13 +326,6 @@ const styles = StyleSheet.create({
         lineHeight: 38,
         fontFamily: 'Inter_700Bold',
         letterSpacing: -1.3,
-    },
-    copy: {
-        marginTop: 8,
-        maxWidth: 300,
-        fontSize: 14,
-        lineHeight: 22,
-        fontFamily: 'Inter_400Regular',
     },
     heroPanel: {
         borderRadius: 30,
