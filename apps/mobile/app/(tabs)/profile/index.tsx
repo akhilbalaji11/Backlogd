@@ -12,6 +12,8 @@ import { GameCard } from '../../../src/components/game/GameCard';
 import { ThemeBackdrop } from '../../../src/components/ui/ThemeBackdrop';
 import { ThemeModeToggle } from '../../../src/components/ui/ThemeModeToggle';
 import type { GameStatus } from '../../../src/domain/types';
+import { socialApi } from '../../../src/lib/api';
+import { isFeatureEnabled } from '../../../src/lib/featureFlags';
 import { profilesRepo } from '../../../src/lib/profilesRepo';
 import { supabase } from '../../../src/lib/supabase';
 import { withTimeout } from '../../../src/lib/withTimeout';
@@ -35,6 +37,13 @@ export default function ProfileScreen() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<ProfileTabKey>('played');
     const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false);
+
+    const { data: tasteGraphEnabled = false } = useQuery({
+        queryKey: ['feature-flag-taste-graph', user?.id],
+        queryFn: () => isFeatureEnabled('taste_graph', user?.id),
+        enabled: !!user,
+        staleTime: 1000 * 60 * 5,
+    });
 
     const { data: statuses = [] } = useQuery({
         queryKey: ['profile-statuses', user?.id],
@@ -129,6 +138,17 @@ export default function ProfileScreen() {
             }));
         },
         enabled: !!user,
+    });
+
+    const { data: compatibility = [] } = useQuery({
+        queryKey: ['compatibility-preview', user?.id, tasteGraphEnabled],
+        queryFn: async () => {
+            if (!tasteGraphEnabled) return [];
+            const { results } = await socialApi.getCompatibility(3);
+            return results;
+        },
+        enabled: !!user,
+        staleTime: 1000 * 60 * 10,
     });
 
     const displayName =
@@ -360,6 +380,29 @@ export default function ProfileScreen() {
                         </View>
                     </LinearGradient>
 
+                    {tasteGraphEnabled && (
+                        <View style={[styles.compatibilityCard, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+                            <View style={styles.compatibilityHeader}>
+                                <Ionicons name="sparkles" size={15} color={theme.colors.hero.secondary} />
+                                <Text style={[styles.compatibilityTitle, { color: theme.colors.text.primary }]}>Taste Compatibility</Text>
+                            </View>
+                            {compatibility.length === 0 ? (
+                                <Text style={[styles.compatibilityEmpty, { color: theme.colors.text.secondary }]}>
+                                    Keep rating and logging games to build your taste graph. Compatibility appears once peers have enough signal.
+                                </Text>
+                            ) : compatibility.map((item: any) => (
+                                <View key={item.peerUserId} style={styles.compatibilityRow}>
+                                    <Text style={[styles.compatibilityName, { color: theme.colors.text.primary }]}>
+                                        {item.peer?.displayName ?? 'Player'}
+                                    </Text>
+                                    <Text style={[styles.compatibilityScore, { color: theme.colors.hero.secondary }]}>
+                                        {(item.score * 100).toFixed(0)}%
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
                         {TABS.map((tab) => {
                             const active = activeTab === tab.key;
@@ -523,6 +566,41 @@ const styles = StyleSheet.create({
     tabRow: {
         gap: 10,
         paddingBottom: 12,
+    },
+    compatibilityCard: {
+        borderRadius: 20,
+        borderWidth: 1,
+        padding: 14,
+        marginBottom: 12,
+    },
+    compatibilityHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8,
+    },
+    compatibilityTitle: {
+        fontSize: 14,
+        fontFamily: 'Inter_700Bold',
+    },
+    compatibilityRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 6,
+    },
+    compatibilityName: {
+        fontSize: 13,
+        fontFamily: 'Inter_500Medium',
+    },
+    compatibilityScore: {
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
+    },
+    compatibilityEmpty: {
+        fontSize: 12,
+        lineHeight: 18,
+        fontFamily: 'Inter_400Regular',
     },
     tabButton: {
         flexDirection: 'row',

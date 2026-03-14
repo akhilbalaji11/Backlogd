@@ -1,8 +1,12 @@
 import type { GameSearchResult, Review } from '../src/domain/types';
 import {
+    buildDiscoveryExplanationPayload,
     buildExplanation,
     buildPreferenceVector,
+    classifyDiscoveryRisk,
+    computeDiscoveryConfidence,
     recommend,
+    scoreActivityForFeed,
     scoreCandidate,
 } from '../src/lib/recommender';
 
@@ -93,5 +97,59 @@ describe('recommend', () => {
         const candidates = [mockGame()];
         const recs = recommend(candidates, [], [], 5);
         expect(recs).toHaveLength(0);
+    });
+});
+
+describe('discovery explainability primitives', () => {
+    it('classifies low-rated candidate as higher risk', () => {
+        expect(classifyDiscoveryRisk({ rating: 58 } as GameSearchResult, 0.65)).toBe('high');
+        expect(classifyDiscoveryRisk({ rating: 89 } as GameSearchResult, 0.8)).toBe('low');
+    });
+
+    it('computes confidence from overlap and history', () => {
+        const confidenceSparse = computeDiscoveryConfidence({
+            overlapScore: 0.2,
+            totalRated: 1,
+            feedbackSamples: 0,
+        });
+        const confidenceRich = computeDiscoveryConfidence({
+            overlapScore: 0.8,
+            totalRated: 20,
+            feedbackSamples: 12,
+        });
+
+        expect(confidenceRich).toBeGreaterThan(confidenceSparse);
+    });
+
+    it('builds explanation payload with reason, confidence, and risk', () => {
+        const vector = buildPreferenceVector([mockReview({ rating: 5 })] as any, []);
+        const game = mockGame({ rating: 86 });
+        const payload = buildDiscoveryExplanationPayload(game, vector, {
+            overlapScore: 0.72,
+            feedbackSamples: 4,
+        });
+
+        expect(payload.reason).toMatch(/Because|Based/i);
+        expect(payload.confidence).toBeGreaterThan(0);
+        expect(['low', 'medium', 'high']).toContain(payload.risk);
+    });
+});
+
+describe('activity feed scoring', () => {
+    it('prioritizes events with stronger social overlap and freshness', () => {
+        const now = Date.now();
+        const highEventScore = scoreActivityForFeed({
+            createdAt: new Date(now - 5 * 60 * 1000).toISOString(),
+            compatibilityScore: 0.82,
+            challengeRelevance: 0.7,
+        });
+        const lowEventScore = scoreActivityForFeed({
+            createdAt: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+            compatibilityScore: 0.12,
+            challengeRelevance: 0.1,
+        });
+
+        expect(highEventScore.score).toBeGreaterThan(lowEventScore.score);
+        expect(highEventScore.reasonChips.length).toBeGreaterThan(0);
     });
 });

@@ -131,7 +131,8 @@ export type ActivityType =
     | 'rating'
     | 'status_change'
     | 'list_add'
-    | 'follow';
+    | 'follow'
+    | 'challenge';
 
 export interface ActivityEvent {
     id: string;
@@ -155,6 +156,45 @@ export interface Recommendation {
     game: GameSearchResult;
     score: number;
     reason: string; // human-readable explanation
+}
+
+export type DiscoveryRisk = 'low' | 'medium' | 'high';
+
+export interface DiscoveryRecommendation {
+    providerId: string;
+    provider: 'igdb';
+    title: string;
+    coverUrl?: string;
+    releaseDate?: string;
+    genres: string[];
+    platforms: string[];
+    rating?: number;
+    score: number;
+    confidence: number;
+    risk: DiscoveryRisk;
+    reason: string;
+}
+
+export interface CompatibilityPreview {
+    peerUserId: string;
+    score: number;
+    reasons: string[];
+    calculatedAt: string;
+    peer?: Pick<Profile, 'id' | 'displayName' | 'avatarUrl'>;
+}
+
+export interface RankedFeedEvent extends ActivityEvent {
+    score: number;
+    reasonChips: string[];
+}
+
+export interface SocialCircle {
+    id: string;
+    ownerId: string;
+    name: string;
+    description?: string;
+    visibility: 'private' | 'friends';
+    createdAt: string;
 }
 
 // ---- Browse Filters ----

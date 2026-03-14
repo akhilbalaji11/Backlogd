@@ -2,17 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameCard, GameHeroCard } from '../../../src/components/game/GameCard';
 import { ThemeBackdrop } from '../../../src/components/ui/ThemeBackdrop';
 import { ThemeModeToggle } from '../../../src/components/ui/ThemeModeToggle';
-import type { ActivityEvent, ActivityType, GameSearchResult } from '../../../src/domain/types';
+import type { ActivityEvent, ActivityType, GameSearchResult, RankedFeedEvent } from '../../../src/domain/types';
 import { IGDB_GENRE_IDS } from '../../../src/domain/types';
-import { gamesApi } from '../../../src/lib/api';
+import { discoveryApi, feedApi, gamesApi } from '../../../src/lib/api';
+import { isFeatureEnabled } from '../../../src/lib/featureFlags';
 import { buildPreferenceVector, recommend } from '../../../src/lib/recommender';
 import { supabase } from '../../../src/lib/supabase';
+import { trackDiscoveryFeedback } from '../../../src/lib/telemetry';
 import { withTimeout } from '../../../src/lib/withTimeout';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useAppTheme } from '../../../src/theme/appTheme';
@@ -32,7 +35,7 @@ function SectionHeader({ icon, title, subtitle, accent }: { icon: keyof typeof I
     );
 }
 
-function ActivityTile({ event }: { event: ActivityEvent }) {
+function ActivityTile({ event }: { event: ActivityEvent | RankedFeedEvent }) {
     const { theme } = useAppTheme();
     const meta = event.metadata as Record<string, any>;
     const actorName = event.actor?.displayName || 'Someone';
@@ -43,6 +46,7 @@ function ActivityTile({ event }: { event: ActivityEvent }) {
         status_change: 'game-controller',
         list_add: 'list',
         follow: 'people',
+        challenge: 'trophy',
     };
 
     const accentByType: Record<ActivityType, string> = {
@@ -51,6 +55,7 @@ function ActivityTile({ event }: { event: ActivityEvent }) {
         status_change: theme.colors.hero.primary,
         list_add: theme.colors.hero.quaternary,
         follow: theme.colors.hero.secondary,
+        challenge: theme.colors.neon.orange,
     };
 
     const labelByType = () => {
@@ -61,6 +66,7 @@ function ActivityTile({ event }: { event: ActivityEvent }) {
             case 'status_change': return `${actorName} marked ${gameTitle} as ${meta?.status || 'played'}`;
             case 'list_add': return `${actorName} added ${gameTitle} to a list`;
             case 'follow': return `${actorName} followed someone`;
+            case 'challenge': return `${actorName} made challenge progress`;
         }
     };
 
@@ -71,6 +77,15 @@ function ActivityTile({ event }: { event: ActivityEvent }) {
             </View>
             <View style={{ flex: 1 }}>
                 <Text style={[styles.activityText, { color: theme.colors.text.primary }]}>{labelByType()}</Text>
+                {'reasonChips' in event && event.reasonChips?.length > 0 && (
+                    <View style={styles.reasonChipRow}>
+                        {event.reasonChips.slice(0, 2).map((chip) => (
+                            <View key={`${event.id}-${chip}`} style={[styles.reasonChip, { borderColor: theme.colors.border }]}>
+                                <Text style={[styles.reasonChipText, { color: theme.colors.text.secondary }]}>{chip}</Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
                 <Text style={[styles.activityMeta, { color: theme.colors.text.secondary }]}>
                     {new Date(event.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </Text>
@@ -83,20 +98,36 @@ export default function DiscoverScreen() {
     const { user } = useAuthStore();
     const router = useRouter();
     const { theme } = useAppTheme();
+    const [mode, setMode] = useState<'standard' | 'contrarian'>('standard');
+    const dayKey = new Date().toISOString().slice(0, 10);
 
-    const { data: trending = [] } = useQuery<GameSearchResult[]>({
-        queryKey: ['trending-games'],
-        queryFn: async () => {
-            const { results } = await gamesApi.search('zelda', 1).catch(() => ({ results: [] }));
-            if (results.length > 0) return results.slice(0, 8);
-            const browse = await gamesApi.browse({ sort: 'rating', sortOrder: 'desc', limit: 8 });
-            return browse.results;
-        },
-        staleTime: 1000 * 60 * 30,
+    const { data: personalizedEnabled = false } = useQuery({
+        queryKey: ['feature-flag-discovery-personalized', user?.id],
+        queryFn: () => isFeatureEnabled('discovery_personalized', user?.id),
+        enabled: !!user,
+        staleTime: 1000 * 60 * 5,
     });
 
-    const { data: feed = [] } = useQuery<ActivityEvent[]>({
-        queryKey: ['activity-feed', user?.id],
+    const { data: feedRankerEnabled = false } = useQuery({
+        queryKey: ['feature-flag-feed-ranker', user?.id],
+        queryFn: () => isFeatureEnabled('feed_ranker', user?.id),
+        enabled: !!user,
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const { data: trending = [] } = useQuery<GameSearchResult[]>({
+        queryKey: ['trending-games', dayKey],
+        queryFn: async () => {
+            const hypes = await gamesApi.browse({ sort: 'hypes', sortOrder: 'desc', limit: 24 }).catch(() => ({ results: [] as GameSearchResult[] }));
+            if (hypes.results.length > 0) return hypes.results;
+            const byRating = await gamesApi.browse({ sort: 'rating', sortOrder: 'desc', limit: 24 }).catch(() => ({ results: [] as GameSearchResult[] }));
+            return byRating.results;
+        },
+        staleTime: 1000 * 60 * 60 * 6,
+    });
+
+    const { data: rawFeed = [] } = useQuery<ActivityEvent[]>({
+        queryKey: ['activity-feed-raw', user?.id],
         queryFn: async () => {
             if (!user) return [];
             try {
@@ -131,82 +162,161 @@ export default function DiscoverScreen() {
         staleTime: 1000 * 30,
     });
 
+    const { data: feed = [] } = useQuery<Array<ActivityEvent | RankedFeedEvent>>({
+        queryKey: ['activity-feed-ranked', user?.id, rawFeed.length, feedRankerEnabled],
+        queryFn: async () => {
+            if (!user || rawFeed.length === 0 || !feedRankerEnabled) return rawFeed;
+            try {
+                const { results } = await feedApi.rank(
+                    rawFeed.map((event) => ({
+                        id: event.id,
+                        actorId: event.actorId,
+                        type: event.type,
+                        createdAt: event.createdAt,
+                        metadata: event.metadata,
+                    })),
+                    8
+                );
+                const byId = new Map(rawFeed.map((event) => [event.id, event]));
+                return results.map((ranked) => ({
+                    ...(byId.get(ranked.id) ?? ranked),
+                    score: ranked.score,
+                    reasonChips: ranked.reasonChips,
+                }));
+            } catch {
+                return rawFeed;
+            }
+        },
+        enabled: !!user,
+        staleTime: 1000 * 30,
+    });
+
     const { data: recommendations = [] } = useQuery({
-        queryKey: ['discover-recommendations', user?.id],
+        queryKey: ['discover-recommendations', user?.id, mode, personalizedEnabled],
         queryFn: async () => {
             if (!user) return [];
-            const [{ data: reviews }, { data: statuses }] = await Promise.all([
-                supabase.from('reviews').select('*, game:games(*)').eq('user_id', user.id),
-                supabase.from('user_game_status').select('*, game:games(*)').eq('user_id', user.id),
-            ]);
+            const loadLegacyRecommendations = async () => {
+                const [
+                    { data: reviews, error: reviewsError },
+                    { data: statuses, error: statusesError },
+                ] = await Promise.all([
+                    supabase.from('reviews').select('*, game:games(*)').eq('user_id', user.id),
+                    supabase.from('user_game_status').select('*, game:games(*)').eq('user_id', user.id),
+                ]);
+                if (reviewsError || statusesError) {
+                    throw reviewsError ?? statusesError;
+                }
 
-            const mappedReviews = (reviews ?? []).map((review: any) => ({
-                id: review.id,
-                userId: review.user_id,
-                gameId: review.game_id,
-                rating: Number(review.rating),
-                reviewText: review.review_text,
-                spoiler: review.spoiler,
-                createdAt: review.created_at,
-                updatedAt: review.updated_at,
-                game: review.game ? {
-                    providerId: review.game.provider_game_id,
-                    provider: 'igdb' as const,
-                    title: review.game.title,
-                    genres: review.game.genres ?? [],
-                    platforms: review.game.platforms ?? [],
-                    rating: review.game.rating,
-                } : undefined,
-            }));
+                const mappedReviews = (reviews ?? []).map((review: any) => ({
+                    id: review.id,
+                    userId: review.user_id,
+                    gameId: review.game_id,
+                    rating: Number(review.rating),
+                    reviewText: review.review_text,
+                    spoiler: review.spoiler,
+                    createdAt: review.created_at,
+                    updatedAt: review.updated_at,
+                    game: review.game ? {
+                        providerId: review.game.provider_game_id,
+                        provider: 'igdb' as const,
+                        title: review.game.title,
+                        genres: review.game.genres ?? [],
+                        platforms: review.game.platforms ?? [],
+                        rating: review.game.rating,
+                    } : undefined,
+                }));
 
-            const mappedStatuses = (statuses ?? []).map((status: any) => ({
-                userId: status.user_id,
-                gameId: status.game_id,
-                status: status.status,
-                addedAt: status.added_at,
-                lastUpdated: status.last_updated,
-                game: status.game ? {
-                    providerId: status.game.provider_game_id,
-                    provider: 'igdb' as const,
-                    title: status.game.title,
-                    genres: status.game.genres ?? [],
-                    platforms: status.game.platforms ?? [],
-                    rating: status.game.rating,
-                } : undefined,
-            }));
+                const mappedStatuses = (statuses ?? []).map((status: any) => ({
+                    userId: status.user_id,
+                    gameId: status.game_id,
+                    status: status.status,
+                    addedAt: status.added_at,
+                    lastUpdated: status.last_updated,
+                    game: status.game ? {
+                        providerId: status.game.provider_game_id,
+                        provider: 'igdb' as const,
+                        title: status.game.title,
+                        genres: status.game.genres ?? [],
+                        platforms: status.game.platforms ?? [],
+                        rating: status.game.rating,
+                    } : undefined,
+                }));
 
-            if (mappedReviews.length === 0 && mappedStatuses.length === 0) return [];
+                if (mappedReviews.length === 0 && mappedStatuses.length === 0) return [];
 
-            const vector = buildPreferenceVector(mappedReviews as any, mappedStatuses as any);
-            const topGenreIds = Object.entries(vector.genres)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 3)
-                .map(([name]) => IGDB_GENRE_IDS[name])
-                .filter((id): id is number => id !== undefined);
+                const vector = buildPreferenceVector(mappedReviews as any, mappedStatuses as any);
+                const topGenreIds = Object.entries(vector.genres)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([name]) => IGDB_GENRE_IDS[name])
+                    .filter((id): id is number => id !== undefined);
 
-            if (topGenreIds.length === 0) return [];
+                if (topGenreIds.length === 0) return [];
 
-            const playedProviderIds = new Set([
-                ...mappedReviews.filter((review) => review.game?.providerId).map((review) => review.game!.providerId),
-                ...mappedStatuses.filter((status) => status.game?.providerId).map((status) => status.game!.providerId),
-            ]);
+                const playedProviderIds = new Set([
+                    ...mappedReviews.filter((review) => review.game?.providerId).map((review) => review.game!.providerId),
+                    ...mappedStatuses.filter((status) => status.game?.providerId).map((status) => status.game!.providerId),
+                ]);
 
-            const { results: candidates } = await gamesApi.browse({
-                genres: topGenreIds,
-                minRating: 72,
-                sort: 'rating',
-                sortOrder: 'desc',
-                excludeIds: Array.from(playedProviderIds),
-                limit: 20,
-            });
+                const { results: candidates } = await gamesApi.browse({
+                    genres: topGenreIds,
+                    minRating: 72,
+                    sort: 'rating',
+                    sortOrder: 'desc',
+                    excludeIds: Array.from(playedProviderIds),
+                    limit: 20,
+                });
 
-            return recommend(candidates, mappedReviews as any, mappedStatuses as any, 4);
+                return recommend(candidates, mappedReviews as any, mappedStatuses as any, 4).map((result) => ({
+                    ...result.game,
+                    matchLabel: result.reason,
+                    source: 'legacy' as const,
+                }));
+            };
+
+            if (personalizedEnabled) {
+                try {
+                    const { results } = await discoveryApi.getPersonalized(mode, 6);
+                    if (results.length > 0) {
+                        return results.map((result) => ({
+                            providerId: result.providerId,
+                            provider: 'igdb' as const,
+                            title: result.title,
+                            coverUrl: result.coverUrl,
+                            releaseDate: result.releaseDate,
+                            genres: result.genres,
+                            platforms: result.platforms,
+                            rating: result.rating,
+                            matchLabel: `${result.reason} • ${(result.confidence * 100).toFixed(0)}% confidence • ${result.risk} risk`,
+                            confidence: result.confidence,
+                            risk: result.risk,
+                            source: 'personalized' as const,
+                        }));
+                    }
+                    if (mode === 'contrarian') {
+                        // Keep contrarian distinct. Do not fall back to standard list.
+                        return [];
+                    }
+                } catch {
+                    if (mode === 'contrarian') {
+                        return [];
+                    }
+                    // Fall through to legacy recommendations for standard mode.
+                }
+            }
+
+            return loadLegacyRecommendations();
         },
         enabled: !!user,
         staleTime: 1000 * 60 * 10,
     });
 
-    const featured = trending[0];
+    const featured = (() => {
+        if (trending.length === 0) return undefined;
+        const daysFromEpoch = Math.floor(new Date(`${dayKey}T00:00:00Z`).getTime() / 86_400_000);
+        return trending[daysFromEpoch % trending.length];
+    })();
+    const shelf = trending.filter((g) => g.providerId !== featured?.providerId).slice(0, 8);
     const heroAccent = theme.colors.hero.primary;
 
     return (
@@ -229,7 +339,7 @@ export default function DiscoverScreen() {
                                 end={{ x: 1, y: 1 }}
                                 style={styles.heroPanel}
                             >
-                                <Text style={styles.heroLabel}>Featured Tonight</Text>
+                                <Text style={styles.heroLabel}>Featured Today</Text>
                                 <Text style={styles.heroTitle}>{featured.title}</Text>
                                 <Text style={styles.heroBlurb}>
                                     Jump into a standout pick from the current catalog and inspect its details, cast, and community context.
@@ -253,34 +363,130 @@ export default function DiscoverScreen() {
                     <SectionHeader
                         icon="flame"
                         title="Trending Shelf"
-                        subtitle="Fast, glossy picks from the live catalog"
+                        subtitle="Fresh daily picks from live IGDB trending data"
                         accent={heroAccent}
                     />
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.heroCarousel}>
-                        {trending.map((game) => (
+                        {shelf.map((game) => (
                             <GameHeroCard key={game.providerId} game={game} onPress={() => router.push(`/game/${game.providerId}`)} />
                         ))}
                     </ScrollView>
 
-                    {recommendations.length > 0 && (
-                        <>
-                            <SectionHeader
-                                icon="sparkles"
-                                title="Made For Your Taste"
-                                subtitle="Recommendations weighted from your ratings and status history"
-                                accent={theme.colors.hero.secondary}
-                            />
-                            <View style={styles.stack}>
-                                {recommendations.map((recommendation) => (
-                                    <GameCard
-                                        key={recommendation.game.providerId}
-                                        game={{ ...recommendation.game, matchLabel: recommendation.reason }}
-                                        onPress={() => router.push(`/game/${recommendation.game.providerId}`)}
-                                    />
-                                ))}
-                            </View>
-                        </>
+                    <SectionHeader
+                        icon="sparkles"
+                        title={mode === 'contrarian' ? 'Contrarian Discovery' : 'Made For Your Taste'}
+                        subtitle={personalizedEnabled
+                            ? 'Explainable picks with confidence and risk signals'
+                            : 'Recommendations weighted from your ratings and status history'}
+                        accent={theme.colors.hero.secondary}
+                    />
+                    {personalizedEnabled && (
+                        <View style={styles.modeToggleRow}>
+                            <TouchableOpacity
+                                onPress={() => setMode('standard')}
+                                style={[
+                                    styles.modeToggle,
+                                    {
+                                        borderColor: theme.colors.border,
+                                        backgroundColor: mode === 'standard' ? theme.colors.surface.glassStrong : 'transparent',
+                                    },
+                                ]}
+                            >
+                                <Text style={[styles.modeToggleText, { color: theme.colors.text.primary }]}>Standard</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => setMode('contrarian')}
+                                style={[
+                                    styles.modeToggle,
+                                    {
+                                        borderColor: theme.colors.border,
+                                        backgroundColor: mode === 'contrarian' ? theme.colors.surface.glassStrong : 'transparent',
+                                    },
+                                ]}
+                            >
+                                <Text style={[styles.modeToggleText, { color: theme.colors.text.primary }]}>Contrarian</Text>
+                            </TouchableOpacity>
+                        </View>
                     )}
+                    {recommendations.length > 0 ? (
+                        <View style={styles.stack}>
+                            {recommendations.map((recommendation: any) => {
+                                const providerId = recommendation.providerId;
+                                return (
+                                    <View key={providerId} style={styles.recommendationCardStack}>
+                                        <GameCard
+                                            game={recommendation}
+                                            onPress={() => {
+                                                if (user) {
+                                                    void trackDiscoveryFeedback({
+                                                        userId: user.id,
+                                                        providerGameId: providerId,
+                                                        feedbackType: 'open',
+                                                        source: 'discover',
+                                                    });
+                                                }
+                                                router.push(`/game/${providerId}`);
+                                            }}
+                                        />
+                                        {recommendation.source === 'personalized' && (
+                                            <View style={styles.feedbackRow}>
+                                                <TouchableOpacity
+                                                    onPress={() => user && trackDiscoveryFeedback({
+                                                        userId: user.id,
+                                                        providerGameId: providerId,
+                                                        feedbackType: 'save',
+                                                        source: 'discover',
+                                                    })}
+                                                    style={[styles.feedbackButton, { borderColor: theme.colors.border }]}
+                                                >
+                                                    <Ionicons name="bookmark-outline" size={14} color={theme.colors.text.secondary} />
+                                                    <Text style={[styles.feedbackText, { color: theme.colors.text.secondary }]}>Useful</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => user && trackDiscoveryFeedback({
+                                                        userId: user.id,
+                                                        providerGameId: providerId,
+                                                        feedbackType: 'skip',
+                                                        source: 'discover',
+                                                    })}
+                                                    style={[styles.feedbackButton, { borderColor: theme.colors.border }]}
+                                                >
+                                                    <Ionicons name="play-skip-forward-outline" size={14} color={theme.colors.text.secondary} />
+                                                    <Text style={[styles.feedbackText, { color: theme.colors.text.secondary }]}>Skip</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    ) : (
+                        <View style={[styles.emptyState, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}>
+                            <Ionicons name="sparkles-outline" size={28} color={theme.colors.text.muted} />
+                            <Text style={[styles.emptyTitle, { color: theme.colors.text.primary }]}>
+                                {mode === 'contrarian' ? 'No contrarian picks right now' : 'No recommendations yet'}
+                            </Text>
+                            <Text style={[styles.emptyCopy, { color: theme.colors.text.secondary }]}>
+                                {mode === 'contrarian'
+                                    ? 'Try switching back to Standard or check again later for more adventurous picks.'
+                                    : 'Rate or log a few games, then reopen Discover. Recommendations will populate from your taste profile.'}
+                            </Text>
+                        </View>
+                    )}
+
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => router.push('/circles' as any)}
+                        style={[styles.circlesBanner, { backgroundColor: theme.colors.surface.glassStrong, borderColor: theme.colors.border }]}
+                    >
+                        <View style={styles.circlesTextWrap}>
+                            <Text style={[styles.circlesTitle, { color: theme.colors.text.primary }]}>Backlog Parties</Text>
+                            <Text style={[styles.circlesSubtitle, { color: theme.colors.text.secondary }]}>
+                                Create social circles and challenge your friends to finally finish games.
+                            </Text>
+                        </View>
+                        <Ionicons name="arrow-forward" size={18} color={theme.colors.hero.secondary} />
+                    </TouchableOpacity>
 
                     <SectionHeader
                         icon="people"
@@ -407,6 +613,42 @@ const styles = StyleSheet.create({
         gap: 12,
         marginBottom: 12,
     },
+    recommendationCardStack: {
+        gap: 8,
+    },
+    modeToggleRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 10,
+    },
+    modeToggle: {
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+    },
+    modeToggleText: {
+        fontSize: 12,
+        fontFamily: 'Inter_600SemiBold',
+    },
+    feedbackRow: {
+        flexDirection: 'row',
+        gap: 8,
+        paddingLeft: 8,
+    },
+    feedbackButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+    },
+    feedbackText: {
+        fontSize: 11,
+        fontFamily: 'Inter_500Medium',
+    },
     activityTile: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -430,6 +672,45 @@ const styles = StyleSheet.create({
     activityMeta: {
         marginTop: 4,
         fontSize: 12,
+        fontFamily: 'Inter_400Regular',
+    },
+    reasonChipRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 8,
+    },
+    reasonChip: {
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+    },
+    reasonChipText: {
+        fontSize: 10,
+        fontFamily: 'Inter_500Medium',
+    },
+    circlesBanner: {
+        borderWidth: 1,
+        borderRadius: 24,
+        padding: 16,
+        marginBottom: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    circlesTextWrap: {
+        flex: 1,
+    },
+    circlesTitle: {
+        fontSize: 16,
+        fontFamily: 'Inter_700Bold',
+    },
+    circlesSubtitle: {
+        marginTop: 4,
+        fontSize: 12,
+        lineHeight: 18,
         fontFamily: 'Inter_400Regular',
     },
     emptyState: {

@@ -1,7 +1,16 @@
 // API client — thin wrapper over Supabase Edge Functions
 // All game data flows through here; keys stay server-side.
 
-import type { GameDetail, GameSearchResult, BrowseFilters } from '../domain/types';
+import type {
+    BrowseFilters,
+    CompatibilityPreview,
+    DiscoveryRecommendation,
+    GameDetail,
+    GameSearchResult,
+    RankedFeedEvent,
+    SocialCircle,
+} from '../domain/types';
+import { supabase } from './supabase';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -38,6 +47,21 @@ async function edgeFetch<T>(path: string, options?: RequestInit & { timeout?: nu
         throw new Error(`Edge function error ${res.status}: ${text}`);
     }
     return res.json() as Promise<T>;
+}
+
+async function edgeFetchAuthenticated<T>(path: string, options?: RequestInit & { timeout?: number }): Promise<T> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+        throw new Error('You need to be signed in for this action.');
+    }
+    return edgeFetch<T>(path, {
+        ...options,
+        headers: {
+            Authorization: `Bearer ${token}`,
+            ...(options?.headers ?? {}),
+        },
+    });
 }
 
 // ---- Game Metadata API ----
@@ -96,5 +120,42 @@ export const aiApi = {
         edgeFetch('/ai-tag-review', {
             method: 'POST',
             body: JSON.stringify({ review_text: reviewText, game_title: gameTitle }),
+        }),
+};
+
+export const discoveryApi = {
+    getPersonalized: (
+        mode: 'standard' | 'contrarian' = 'standard',
+        limit = 10
+    ): Promise<{ mode: string; results: DiscoveryRecommendation[] }> =>
+        edgeFetchAuthenticated(`/discovery-personalized?mode=${mode}&limit=${limit}`),
+};
+
+export const socialApi = {
+    getCompatibility: (limit = 8): Promise<{ results: CompatibilityPreview[] }> =>
+        edgeFetchAuthenticated(`/compatibility-preview?limit=${limit}`),
+
+    circleAction: (
+        payload:
+            | { action: 'create_circle'; name: string; description?: string; visibility?: 'private' | 'friends' }
+            | { action: 'join_circle'; circleId: string }
+            | { action: 'create_challenge'; circleId: string; title: string; goalType: 'finish_count' | 'session_minutes'; goalTarget: number; startDate: string; endDate: string }
+            | { action: 'update_progress'; challengeId: string; progressDelta: number }
+            | { action: 'list_my_circles' }
+    ): Promise<{ result?: SocialCircle; results?: SocialCircle[]; ok?: boolean }> =>
+        edgeFetchAuthenticated('/circle-challenges', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }),
+};
+
+export const feedApi = {
+    rank: (
+        events: Array<{ id: string; actorId: string; type: string; createdAt: string; metadata?: Record<string, unknown> }>,
+        limit = 10
+    ): Promise<{ results: RankedFeedEvent[] }> =>
+        edgeFetchAuthenticated('/feed-rank', {
+            method: 'POST',
+            body: JSON.stringify({ events, limit }),
         }),
 };

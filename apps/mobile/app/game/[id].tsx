@@ -446,6 +446,9 @@ export default function GameDetailScreen() {
             setCurrentStatus(status);
             qc.invalidateQueries({ queryKey: ['game-user-activity'] });
             qc.invalidateQueries({ queryKey: ['profile-statuses'] });
+            qc.invalidateQueries({ queryKey: ['activity-feed-raw'] });
+            qc.invalidateQueries({ queryKey: ['activity-feed-ranked'] });
+            qc.invalidateQueries({ queryKey: ['discover-recommendations'] });
         },
         onError: (error: Error) => Alert.alert('Error', error.message),
     });
@@ -493,6 +496,9 @@ export default function GameDetailScreen() {
             setPersistedRating(newRating);
             qc.invalidateQueries({ queryKey: ['game-user-activity'] });
             qc.invalidateQueries({ queryKey: ['profile-reviews'] });
+            qc.invalidateQueries({ queryKey: ['activity-feed-raw'] });
+            qc.invalidateQueries({ queryKey: ['activity-feed-ranked'] });
+            qc.invalidateQueries({ queryKey: ['discover-recommendations'] });
         },
         onError: (error: Error) => {
             setUserRating(persistedRating);

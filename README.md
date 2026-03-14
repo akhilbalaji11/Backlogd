@@ -1,4 +1,4 @@
-﻿# Backlogd
+# Backlogd
 
 > The social quest log for gamers with 200 unplayed titles and confidence anyway.
 
@@ -34,6 +34,10 @@ What is implemented in this repo today:
 - List creation and list visibility (public/private)
 - Deterministic recommendation engine with unit tests
 - Optional AI review tagging edge function (`ai-tag-review`)
+- Taste graph foundation tables + compatibility preview edge function
+- Explainable discovery edge function (`discovery-personalized`) with contrarian mode support
+- Social circles/challenges edge function (`circle-challenges`)
+- Feed ranking edge function (`feed-rank`) for rationale-based activity ordering
 
 What is scaffolded but not fully wired in UI yet:
 - Follow/unfollow UI flows
@@ -106,6 +110,10 @@ In Supabase SQL Editor, run these in order:
 3. `supabase/migrations/003_lists_activity.sql`
 4. `supabase/migrations/004_manual_games_insert_policy.sql`
 5. `supabase/migrations/005_play_sessions_first_time.sql`
+6. `supabase/migrations/006_diary_and_lists_enhancements.sql`
+7. `supabase/migrations/007_taste_and_discovery_foundation.sql`
+8. `supabase/migrations/008_social_circles_and_challenges.sql`
+9. `supabase/migrations/009_rollout_hardening.sql`
 
 Optional: run `supabase/seed.sql` after migrations if you want demo game data.
 
@@ -125,6 +133,10 @@ supabase functions deploy games-search
 supabase functions deploy games-browse
 supabase functions deploy games-detail
 supabase functions deploy ai-tag-review
+supabase functions deploy compatibility-preview
+supabase functions deploy discovery-personalized
+supabase functions deploy circle-challenges
+supabase functions deploy feed-rank
 ```
 
 ### 6. Run the app

@@ -176,21 +176,28 @@ export const profilesRepo = {
     },
 
     async isFollowing(followerId: string, followingId: string): Promise<boolean> {
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('follows')
             .select('follower_id')
             .eq('follower_id', followerId)
             .eq('following_id', followingId)
-            .single();
+            .maybeSingle();
+        if (error) throw error;
         return !!data;
     },
 
     async follow(followerId: string, followingId: string): Promise<void> {
-        await supabase.from('follows').insert({ follower_id: followerId, following_id: followingId });
+        const { error } = await supabase
+            .from('follows')
+            .insert({ follower_id: followerId, following_id: followingId });
+        if (error) throw error;
     },
 
     async unfollow(followerId: string, followingId: string): Promise<void> {
-        await supabase.from('follows').delete()
+        const { error } = await supabase
+            .from('follows')
+            .delete()
             .eq('follower_id', followerId).eq('following_id', followingId);
+        if (error) throw error;
     },
 };

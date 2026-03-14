@@ -11,6 +11,29 @@ interface UserPreferenceVector {
     totalRated: number;
 }
 
+export type DiscoveryRisk = 'low' | 'medium' | 'high';
+
+interface DiscoveryConfidenceInput {
+    overlapScore: number;
+    totalRated: number;
+    feedbackSamples: number;
+}
+
+interface ActivityScoreInput {
+    createdAt: string;
+    compatibilityScore?: number;
+    challengeRelevance?: number;
+}
+
+interface ActivityScoreOutput {
+    score: number;
+    reasonChips: string[];
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+}
+
 /**
  * Build a weighted preference vector from the user's reviews and statuses.
  * Games rated higher contribute more weight.
@@ -126,6 +149,59 @@ export function buildExplanation(
 
     if (parts.length === 0) return 'Based on your gaming history';
     return `Because ${parts.join(' and ')}`;
+}
+
+export function computeDiscoveryConfidence(input: DiscoveryConfidenceInput): number {
+    const overlapWeight = clamp(input.overlapScore, 0, 1) * 0.55;
+    const historyWeight = clamp(input.totalRated / 20, 0, 1) * 0.3;
+    const feedbackWeight = clamp(input.feedbackSamples / 25, 0, 1) * 0.15;
+    return clamp(overlapWeight + historyWeight + feedbackWeight, 0, 1);
+}
+
+export function classifyDiscoveryRisk(game: GameSearchResult, confidence: number): DiscoveryRisk {
+    const rating = game.rating ?? 65;
+    if (rating >= 82 && confidence >= 0.65) return 'low';
+    if (rating <= 65 || confidence < 0.4) return 'high';
+    return 'medium';
+}
+
+export function buildDiscoveryExplanationPayload(
+    game: GameSearchResult,
+    vector: UserPreferenceVector,
+    options: { overlapScore: number; feedbackSamples: number }
+): { reason: string; confidence: number; risk: DiscoveryRisk } {
+    const confidence = computeDiscoveryConfidence({
+        overlapScore: options.overlapScore,
+        totalRated: vector.totalRated,
+        feedbackSamples: options.feedbackSamples,
+    });
+
+    return {
+        reason: buildExplanation(game, vector),
+        confidence,
+        risk: classifyDiscoveryRisk(game, confidence),
+    };
+}
+
+export function scoreActivityForFeed(input: ActivityScoreInput): ActivityScoreOutput {
+    const createdAtMs = new Date(input.createdAt).getTime();
+    const ageHours = Number.isFinite(createdAtMs)
+        ? Math.max(0, (Date.now() - createdAtMs) / (1000 * 60 * 60))
+        : 48;
+
+    const freshness = clamp(1 - ageHours / 48, 0, 1);
+    const compatibility = clamp(input.compatibilityScore ?? 0.35, 0, 1);
+    const challenge = clamp(input.challengeRelevance ?? 0, 0, 1);
+
+    const score = freshness * 0.5 + compatibility * 0.35 + challenge * 0.15;
+    const reasonChips: string[] = [];
+
+    if (compatibility >= 0.65) reasonChips.push('High taste overlap');
+    if (challenge >= 0.55) reasonChips.push('Challenge progress');
+    if (freshness >= 0.7) reasonChips.push('Fresh activity');
+    if (reasonChips.length === 0) reasonChips.push('Recent from your network');
+
+    return { score, reasonChips };
 }
 
 /**

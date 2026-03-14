@@ -53,11 +53,14 @@ function Deploy-Function {
         content = [System.IO.File]::ReadAllText($MainFile)
     }
 
-    $sharedPath = Join-Path $PSScriptRoot "supabase\functions\_shared\igdb.ts"
-    if (Test-Path $sharedPath) {
-        $files += @{
-            name = "_shared/igdb.ts"
-            content = [System.IO.File]::ReadAllText($sharedPath)
+    $sharedDir = Join-Path $PSScriptRoot "supabase\functions\_shared"
+    if (Test-Path $sharedDir) {
+        Get-ChildItem -Path $sharedDir -Filter "*.ts" | ForEach-Object {
+            $relativeName = "_shared/$($_.Name)"
+            $files += @{
+                name = $relativeName
+                content = [System.IO.File]::ReadAllText($_.FullName)
+            }
         }
     }
 
@@ -103,6 +106,10 @@ Deploy-Function -Name "games-search" -MainFile (Join-Path $functionsRoot "games-
 Deploy-Function -Name "games-browse" -MainFile (Join-Path $functionsRoot "games-browse\index.ts")
 Deploy-Function -Name "games-detail" -MainFile (Join-Path $functionsRoot "games-detail\index.ts")
 Deploy-Function -Name "ai-tag-review" -MainFile (Join-Path $functionsRoot "ai-tag-review\index.ts")
+Deploy-Function -Name "compatibility-preview" -MainFile (Join-Path $functionsRoot "compatibility-preview\index.ts")
+Deploy-Function -Name "discovery-personalized" -MainFile (Join-Path $functionsRoot "discovery-personalized\index.ts")
+Deploy-Function -Name "circle-challenges" -MainFile (Join-Path $functionsRoot "circle-challenges\index.ts")
+Deploy-Function -Name "feed-rank" -MainFile (Join-Path $functionsRoot "feed-rank\index.ts")
 
 Write-Host "`nAll done." -ForegroundColor Green
 Write-Host "Dashboard: https://supabase.com/dashboard/project/$ProjectRef/functions" -ForegroundColor Yellow

@@ -113,6 +113,8 @@ function RootShell() {
                     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg.primary } }}>
                         <Stack.Screen name="(auth)" />
                         <Stack.Screen name="(tabs)" />
+                        <Stack.Screen name="circles" />
+                        <Stack.Screen name="user/[id]" />
                         <Stack.Screen
                             name="game/[id]"
                             options={{

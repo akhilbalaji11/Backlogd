@@ -105,6 +105,15 @@ export default function TabsLayout() {
                 }}
             />
             <Tabs.Screen
+                name="people/index"
+                options={{
+                    title: 'People',
+                    tabBarIcon: ({ color, focused }) => (
+                        <TabIcon name="people" color={color} focused={focused} accent={theme.colors.hero.secondary} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
                 name="profile/index"
                 options={{
                     title: 'Profile',
